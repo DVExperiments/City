@@ -13,7 +13,7 @@ Every file sits at the top level.
 | `universe.js` | The simulation: map, construction, power grid and pollution. No DOM code. |
 | `index.html` | The site. |
 | `city.css` | Styles, built on Glacial's. |
-| `map.js` | The pan-and-zoom map. Display only. |
+| `map.js` | The pan-and-zoom map, painted as pixel art at 16 pixels per block and repainted only when something changes. Display only. |
 | `city.js` | Pages, live updates and routing. |
 | `test.html` | Self-checks and a year-by-year report. |
 
@@ -41,13 +41,17 @@ Landmarks link to the other sites: the Senate House, the Glacial Stadium (where 
 
 Every hour, demand follows the time of day, heating and cooling with the temperature, the stadium floodlights after dark, Grand Prix crowds, the construction budget and traffic limits. Supply comes in merit order: solar (sun and cloud), wind (no power below 10 km/h, shut down in storms above 100 km/h), coal (limited by the emissions cap), the 100 MW national grid link, then 160 MW of gas peakers. If that isn't enough, rolling blackouts move from district to district each hour.
 
+## The port
+
+Shipping is part of the simulation. Container ships call every day (one to three), and the harbour ferry crosses at 08:00 and 17:00. Coal carriers call as often as the operating coal plants need fuel, and gas tankers follow how hard the gas peakers worked the day before, so the harbour reflects the Senate's energy laws too. Ships sail in over two hours, tie up at one of six berths for half a day or more, and sail out. Gusts of 88 km/h or more, or a named storm blowing a gale, hold ships outside the harbour. The Port page shows the arrivals board and the last 30 days of calls; a fuller freight page will follow.
+
 ## The air
 
 Daily emissions from coal, gas, traffic and construction build up as smog, which rain clears and still days hold in place. This is a first version of the air-quality model; the Ecosystem will take it over.
 
 ## Events
 
-Source `city`: construction starts, openings and closures; blackouts (with districts and hours); record demand; smog alerts and clearances; Grand Prix crowds.
+Source `city`: construction starts, openings and closures; blackouts (with districts and hours); record demand; smog alerts and clearances; Grand Prix crowds; coal and gas deliveries; ships held by the weather.
 
 ## API
 
@@ -58,6 +62,8 @@ Source `city`: construction starts, openings and closures; blackouts (with distr
 | `eventsBetween(from, to)` | Events in the shared format |
 | `historyBetween(from, to)` | Daily summaries: energy by source, clean share, peak, blackout hours by district, emissions, air quality |
 | `siteStateAt(featureId, time)` | One reserved site: empty, building, operating or clearing |
+| `shipsAt(time)` | Ships in sight: arriving, alongside or departing, with cargo, origin and berth |
+| `portBetween(from, to)` | Every ship call arriving in a range |
 
 ## Testing
 

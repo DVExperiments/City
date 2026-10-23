@@ -235,3 +235,10 @@ table.data { width: 100%; border-collapse: collapse; font-size: 0.97rem; }
 .mapctl button:hover { background: rgba(14,23,28,0.95); }
 .mapctl button[aria-pressed="false"] { opacity: 0.6; }
 @media (max-width: 600px) { .citymap { height: 62vh; } .mapctl { top: 12px; right: 12px; } .mapctl #zfit { display: none; } }
+
+/* ---------- calls to action and selection ---------- */
+.cta { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; padding: 11px 18px; border-radius: 4px; background: var(--link); color: #fff; font: 600 1rem/1 var(--body); text-decoration: none; box-shadow: 0 1px 0 rgba(0,0,0,0.15); }
+.cta:hover { filter: brightness(1.08); text-decoration: none; }
+.cta:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+@media (prefers-color-scheme: dark) { .cta { color: #0E171C; } }
+#selection .facts dd { font-size: 1.1rem; }

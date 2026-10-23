@@ -33,7 +33,8 @@
     for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
     return h >>> 0;
   }
-  const unit = (s) => hash('city:' + s) / 4294967296;
+  // one well-mixed number per key: hashes of similar keys are similar, so they go through the generator first
+  const unit = (s) => rng(hash('city:' + s))();
   const seeded = (s) => rng(hash('city:' + s));
 
   // ---------------------------------------------------------------- small maths
@@ -152,7 +153,15 @@
     landmark('bookmaker', 'The Bookmaker', 50, 70, 4, 3, null);
     landmark('press', 'The Newspaper Office', DOWNTOWN.x + 6, DOWNTOWN.y + 4, 4, 3, null);
     landmark('gas', 'Harbour Gas Station', 112, 66, 4, 3, null);
-    landmark('port', 'The Port', 111, 54, 4, 8, null);
+    { // the port sits on the quay, as close to the berths as the land allows
+      let best = null, bd = 1e9;
+      for (let y = 48; y <= 66; y++) for (let x = 100; x <= 114; x++) {
+        if (!free(x, y, 4, 8)) continue;
+        const d = (113 - x) * (113 - x) + (58 - y - 4) * (58 - y - 4);
+        if (d < bd) { bd = d; best = { x, y }; }
+      }
+      if (best) place({ kind: 'landmark', type: 'port', name: 'The Port', x: best.x, y: best.y, w: 4, h: 8, link: null });
+    }
     // reserved sites, in the order the Senate's laws would fill them
     const site = (type, name, index, w, h, x0, y0, rad) => { const p = near(x0, y0, w, h, rad, type + ':' + index); if (p) place({ kind: 'site', type, name, index, x: p.x, y: p.y, w, h }); };
     const dn = (x, y) => (profiles[district[at(x, y)]] || { name: 'the city' }).name;
@@ -210,7 +219,14 @@
     for (const D of districts) { D.cx = rnd(D.cx / (D.tiles || 1)); D.cy = rnd(D.cy / (D.tiles || 1)); }
     let residents = 0;
     for (const D of districts) residents += D.residents;
-    return { W, H: HT, tiles, district, owner, features, districts, residents };
+    // berths: the first stretch of open water along the harbour, row by row
+    const berths = [];
+    for (const yb of [53, 55, 57, 59, 61, 63]) {
+      let bx = -1;
+      for (let x = 96; x < W; x++) if (tiles[at(x, yb)] === T.SEA && tiles[at(x, yb + 1)] === T.SEA) { bx = x; break; }
+      if (bx >= 0) berths.push({ x: bx, y: yb });
+    }
+    return { W, H: HT, tiles, district, owner, features, districts, residents, berths, mouth: { x: W + 3, y: 58 } };
   }
 
   // ================================================================ construction over time
@@ -297,6 +313,29 @@
     return order.slice(0, n).sort((a, b) => a - b);
   }
 
+  // ================================================================ shipping
+  // Container ships call every day and a ferry crosses twice. Coal carriers call as often as the operating coal plants
+  // need fuel; gas tankers follow how hard the peakers worked the day before. Storms hold ships outside the harbour.
+  const SHIP_A = ['Pixel', 'Kerning', 'Raster', 'Northern', 'Southern', 'Harbour', 'Gamma', 'Vector', 'Halftone', 'Scanline', 'Luminous', 'Steady', 'Patient', 'Measured', 'Quiet'];
+  const SHIP_B = ['Endeavour', 'Star', 'Spirit', 'Trader', 'Voyager', 'Pioneer', 'Courier', 'Horizon', 'Drift', 'Promise', 'Monarch', 'Crawler', 'Margin', 'Tide'];
+  const PORTS = ['Kerning Bay', 'the Northern Isles', 'Raster Point', 'Port Gamma', 'Halftone Harbour', 'the Southern Reach', 'Vector Sound', 'Scanline Strait'];
+  const SHIP_TYPES = {
+    container: { label: 'Container ship', berths: [1, 2, 3], stay: [10, 20], unit: 'TEU', amount: [300, 2200] },
+    bulk: { label: 'Coal carrier', berths: [4], stay: [18, 30], unit: 't of coal', amount: [25000, 60000] },
+    tanker: { label: 'Gas tanker', berths: [5], stay: [8, 14], unit: 't of gas', amount: [8000, 30000] },
+    ferry: { label: 'Harbour ferry', berths: [0], stay: [1, 1], unit: 'passengers', amount: [80, 400] }
+  };
+  /** Holds a sailing until the weather allows: no gusts of 88 km/h or more, and no named storm blowing a gale. */
+  function weatherWindow(t) {
+    let x = t, held = 0;
+    for (let k = 0; k < 16; k++) {
+      const w = climate().sample(x);
+      if (w.gust < 88 && !(w.storm && w.gust >= 60)) break;
+      x += 3 * H; held += 3 * H;
+    }
+    return { t: x, held };
+  }
+  
   // ================================================================ days, pollution and events
   const AQI_BANDS = [[50, 'Good'], [100, 'Moderate'], [150, 'Unhealthy for sensitive pixels'], [200, 'Unhealthy'], [300, 'Very unhealthy'], [9999, 'Hazardous']];
   const aqiBand = (v) => { for (const [lim, name] of AQI_BANDS) if (v <= lim) return name; return 'Hazardous'; };
@@ -341,6 +380,51 @@
         dark, emissions: rnd(emissions) };
     }
     function day(d) { if (!days.has(d)) days.set(d, summarise(d)); return days.get(d); }
+
+    const ports = new Map();
+    /** Every ship due on day d, with arrival and departure times after any weather holds. */
+    function schedule(d) {
+      if (ports.has(d)) return ports.get(d);
+      const r = seeded('port:' + ymd(d)), calls = [];
+      const { ops } = opsAt(d + 6 * H);
+      const gasYesterday = d - DAY >= EPOCH ? day(d - DAY).energy.gas : 0;
+      const add = (type, k, hour) => {
+        const S = SHIP_TYPES[type];
+        const a = r(), b = r(), c = r(), e = r(), f = r();
+        const due = d + Math.floor((hour !== undefined ? hour : 2 + a * 20) * 60) * MIN;
+        const win = weatherWindow(due);
+        const stay = (S.stay[0] + b * (S.stay[1] - S.stay[0])) * H;
+        const leave = weatherWindow(win.t + stay);
+        const id = 'ship-' + ymd(d) + '-' + type + '-' + k;
+        const name = type === 'ferry' ? 'Harbour Ferry ' + (k + 1) : SHIP_A[Math.floor(unit('ship-a:' + id) * SHIP_A.length)] + ' ' + SHIP_B[Math.floor(unit('ship-b:' + id) * SHIP_B.length)];
+        calls.push({ id, type, label: S.label, name, from: type === 'ferry' ? 'the far shore' : PORTS[Math.floor(unit('ship-from:' + id) * PORTS.length)],
+          berth: S.berths[k % S.berths.length], due, arrive: win.t, depart: leave.t, held: win.held + leave.held,
+          cargo: Math.floor(S.amount[0] + b * (S.amount[1] - S.amount[0])), unit: S.unit });
+      };
+      add('ferry', 0, 8); add('ferry', 1, 17);
+      const nC = 1 + Math.floor(r() * 2.6);
+      for (let k = 0; k < nC; k++) add('container', k);
+      const coalRoll = r(), gasRoll = r();
+      if (coalRoll < ops.coal * 0.11) add('bulk', 0);
+      if (gasRoll < 0.04 + gasYesterday / 4500) add('tanker', 0);
+      calls.sort((p, q) => p.arrive - q.arrive);
+      ports.set(d, calls);
+      return calls;
+    }
+    /** Ships in sight at time t: sailing in (two hours before arriving), at berth, or sailing out (two hours after leaving). */
+    function shipsAt(t) {
+      const out = [];
+      for (let d = dayOf(t) - 3 * DAY; d <= dayOf(t); d += DAY) {
+        if (d < EPOCH) continue;
+        for (const c of schedule(d)) {
+          if (t < c.arrive - 2 * H || t > c.depart + 2 * H) continue;
+          const phase = t < c.arrive ? 'arriving' : t <= c.depart ? 'berthed' : 'departing';
+          const p = phase === 'arriving' ? (t - (c.arrive - 2 * H)) / (2 * H) : phase === 'departing' ? (t - c.depart) / (2 * H) : 1;
+          out.push(Object.assign({}, c, { phase, progress: rd1(p * 1000) / 1000 }));
+        }
+      }
+      return out;
+    }
 
     function emit(out, t, type, importance, idPart, data, headline) {
       out.push({ id: 'city:' + idPart, time: iso(t), ms: t, source: 'city', type, importance, data, headline });
@@ -394,6 +478,13 @@
       x.air = aqiBand(x.aqi);
       if (x.aqi > 150 && !h.smogAlert) { h.smogAlert = true; emit(out, te, 'city.smog', 3, 'smog:' + ymd(d), { aqi: x.aqi }, 'Smog alert: air quality is ' + x.air.toLowerCase() + ' (' + x.aqi + ')'); }
       else if (x.aqi <= 100 && h.smogAlert) { h.smogAlert = false; emit(out, te, 'city.smog.clears', 2, 'smog-clears:' + ymd(d), { aqi: x.aqi }, 'The smog clears'); }
+      // the port
+      for (const c of schedule(d)) {
+        if (c.held >= 6 * H && c.type !== 'ferry') emit(out, c.due, 'port.held', 2, c.id + ':held', { ship: c.name, type: c.type, hours: Math.floor(c.held / H) },
+          'The ' + c.label.toLowerCase() + ' ' + c.name + ' is held outside the harbour by the weather');
+        if (c.type === 'bulk') emit(out, c.arrive, 'port.coal', 1, c.id + ':arrives', { ship: c.name, cargo: c.cargo }, c.name + ' docks with ' + c.cargo.toLocaleString('en') + ' t of coal for the power plants');
+        if (c.type === 'tanker') emit(out, c.arrive, 'port.gas', 1, c.id + ':arrives', { ship: c.name, cargo: c.cargo }, c.name + ' docks with ' + c.cargo.toLocaleString('en') + ' t of gas for the peakers');
+      }
       // Grand Prix crowds
       if (new Date(d).getUTCDate() === 1) emit(out, d + 9 * H, 'city.crowds', 2, 'gp:' + ymd(d), {}, 'Crowds pour into the Glacial Stadium for the Grand Prix');
     }
@@ -426,12 +517,20 @@
       const sites = m.features.filter((f) => f.kind === 'site').map((f) => Object.assign({ id: f.id, type: f.type, name: f.name }, siteState(f, tl[SITE_FOR[f.type]], t)));
       const today = summarise(d, t);
       const keep = 0.62, smog = rnd(hist.smog * keep + today.emissions / 160);
-      return { time: t, started: true, version: VERSION, grid: g, dark, ops, levels, sites, today, residents: m.residents, aqi: smog, air: aqiBand(smog) };
+      return { time: t, started: true, version: VERSION, grid: g, dark, ops, levels, sites, today, residents: m.residents, aqi: smog, air: aqiBand(smog), ships: shipsAt(t) };
     }
     return {
       version: VERSION, source: 'city', startDate: ymd(EPOCH), epoch: EPOCH, ready,
       map: () => (ready() ? ensureMap() : null), T, TILE_NAMES, RESIDENTS, JOBS, MW,
       stateAt, eventsBetween, historyBetween,
+      shipsAt: (t) => (ready() && t >= EPOCH ? shipsAt(t) : []),
+      portBetween: (from, to) => {
+        if (!ready()) return [];
+        const out = [];
+        for (let d = dayOf(from) > EPOCH ? dayOf(from) : EPOCH; d <= to; d += DAY) for (const c of schedule(d)) if (c.arrive >= from && c.arrive <= to) out.push(c);
+        return out;
+      },
+      SHIP_TYPES,
       siteStateAt: (featureId, t) => { const f = ensureMap().features[featureId]; return siteState(f, ensureTimelines(t)[SITE_FOR[f.type]], t); },
       create: createCity, _internals: { rng, hash, unit }
     };

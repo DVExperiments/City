@@ -60,7 +60,7 @@
         '<figure class="screen mapwrap"><canvas id="citymap" class="citymap" tabindex="0" aria-label="Map of Pixel City. Drag to move, scroll or pinch to zoom, select a building for details."></canvas>' +
         '<div class="mapctl"><button type="button" id="zin" aria-label="Zoom in">+</button><button type="button" id="zout" aria-label="Zoom out">\u2212</button><button type="button" id="zfit">Whole city</button><button type="button" id="zdist" aria-pressed="true">Districts</button></div>' +
         '<figcaption class="screen-bar"><span id="barleft"></span><span class="clock" id="clock"></span></figcaption></figure>' +
-        '<div class="live-body"><section><h2 id="selTitle">Select anything on the map</h2><div id="selection" class="muted">Drag to explore, scroll or pinch to zoom, and select a building or district for details.</div></section>' +
+        '<div class="live-body"><section><h2 id="selTitle">Select anything on the map</h2><div id="selection" class="muted">Drag to explore, scroll or pinch to zoom. Select a district, a building or a ship for details.</div></section>' +
         '<aside><h2>The grid right now</h2><div id="grid"></div><dl class="facts" id="gridfacts" style="grid-template-columns:1fr 1fr"></dl></aside></div>' +
         '<div class="two-col"><section><h2>City news</h2><ul class="timeline" id="news"></ul></section><section><h2>Being built</h2><ul class="timeline" id="building"></ul></section></div>';
     },
@@ -77,26 +77,72 @@
       let raf = 0;
       const loop = () => { view.frame(st, light(now()), wx, now()); raf = requestAnimationFrame(loop); };
       const set = (id, html) => { const el = document.getElementById(id); if (el && el.innerHTML !== html) el.innerHTML = html; };
+      const cta = (href, text, internal) => '<p><a class="cta" href="' + (internal ? AT + '#/' + href : href) + '">' + text + ' <span aria-hidden="true">\u2192</span></a></p>';
+      const fmtT = (ms) => fTime.format(ms) + (dayOf(ms) !== dayOf(now()) ? ', ' + fShort.format(ms) : '');
+      function districtCard(d) {
+        const sens = senatorsFor(d.name), dk = monthStats(now());
+        const parks = st.sites.filter((x) => x.type === 'park' && x.state === 'operating' && map.features[x.id].district === d.id).length;
+        const here = map.features.filter((f) => f.district === d.id && (f.kind === 'landmark' || (st.sites[map.features.filter((g) => g.kind === 'site' && g.id < f.id).length] || {}).state === 'operating'));
+        return '<p class="lede" style="font-size:1rem">A ' + character(d).toLowerCase() + ' district.</p>' +
+          '<dl class="facts" style="grid-template-columns:1fr 1fr 1fr">' + fact('Residents', d.residents.toLocaleString()) + fact('Jobs', d.jobs.toLocaleString()) +
+          fact('Power', st.dark.indexOf(d.id) >= 0 ? '<span class="miss">Off</span>' : 'On') + fact('Blackouts', (dk[d.id] || 0) + ' h', 'last 30 days') + fact('Parks open', parks) + fact('Area', d.tiles + ' blocks') + '</dl>' +
+          '<p style="margin-top:14px"><b>Senators:</b> ' + (sens.length ? sens.map(senLink).join(', ') : '<span class="muted">not yet elected</span>') + '</p>' +
+          (here.length ? '<p><b>Here:</b> ' + here.map((f) => esc(f.name)).join(', ') + '</p>' : '') + cta('district/' + d.id, 'More about ' + esc(d.name), true);
+      }
+      function landmarkCard(f) {
+        const t = now(), wxNow = W.sample(t);
+        if (f.type === 'senate') {
+          const ss = S.stateAt(t);
+          const day = dayOf(t), sits = S.calendar.isSitting(day) && t < day + 23.5 * H && !S.calendar.adjourned(day);
+          const line = !ss.started ? 'The founding election is on ' + fYear.format(Date.UTC(2026, 10, 28)) + '.' : ss.dissolved ? 'The Senate is dissolved until the snap election on ' + esc(ss.snapElection) + '.' :
+            'Brightness ' + ss.composition.B + ', Verdant ' + ss.composition.V + ', Legacy Mode ' + ss.composition.L + (ss.composition.I ? ', independents ' + ss.composition.I : '') + '.' +
+            (ss.majorityLeader ? ' Majority Leader: Senator ' + esc(ss.majorityLeader.name) + '.' : '') + (sits ? (t >= day + 19 * H ? ' The Senate is sitting now.' : ' Sits tonight at 19:00.') : '');
+          return '<p class="lede" style="font-size:1rem">Where the Pixel Senate sits. ' + line + '</p>' + cta(f.link, 'Visit the Senate');
+        }
+        if (f.type === 'stadium') {
+          const gp = new Date(t).getUTCDate() <= 2;
+          return '<p class="lede" style="font-size:1rem">Home of Glacial, the world\u2019s slowest race. ' + (gp ? 'It is Grand Prix weekend, and the stands are packed.' : 'Today\u2019s Daily Crawl started at midnight and will finish late tonight.') +
+            ' Conditions: ' + esc(wxNow.cond.toLowerCase()) + ', ' + Math.round(wxNow.temp) + '\u00b0C.</p>' + cta(f.link, 'Watch the race on Glacial');
+        }
+        if (f.type === 'bureau') {
+          const fc = W.forecastAt(t), d0 = fc && fc.days.find((d) => d.day === dayOf(t));
+          return '<p class="lede" style="font-size:1rem">The Weather Bureau keeps the city\u2019s records. Right now: ' + esc(wxNow.cond.toLowerCase()) + ', ' + wxNow.temp.toFixed(1) + '\u00b0C, wind ' + wxNow.wind + ' km/h ' + wxNow.compass + '.' +
+            (d0 ? ' Today\u2019s forecast: ' + esc(d0.text) : '') + '</p>' + cta(f.link, 'Visit the Weather Bureau');
+        }
+        if (f.type === 'port') {
+          const ships = st.ships.filter((x) => x.phase === 'berthed').length;
+          return '<p class="lede" style="font-size:1rem">' + (ships ? ships + ' ship' + (ships === 1 ? ' is' : 's are') + ' alongside.' : 'The berths are empty for now.') + ' Coal, gas and containers come through here.</p>' + cta('port', 'See the arrivals board', true);
+        }
+        if (f.type === 'gas') return '<p class="lede" style="font-size:1rem">Two gas peakers, fired up when the city runs short. Output now: ' + Math.round(st.grid.gas) + ' MW of ' + C.MW.gas + '.</p>' + cta('power', 'See the power grid', true);
+        if (f.type === 'bookmaker') return '<p class="lede" style="font-size:1rem">Opening soon. City residents will bet on Glacial\u2019s races here, and their bets will move the odds.</p>';
+        if (f.type === 'press') return '<p class="lede" style="font-size:1rem">Opening soon. The city\u2019s newspaper will be printed here, with news from every corner of the Pixel Universe.</p>';
+        return '';
+      }
       function showSelection(sel) {
-        const f = sel.feature;
         let title, html;
-        if (f) {
+        if (sel.ship) {
+          const sh = sel.ship;
+          title = esc(sh.name);
+          html = '<p class="lede" style="font-size:1rem">' + esc(sh.label) + ' from ' + esc(sh.from) + ', carrying ' + sh.cargo.toLocaleString() + ' ' + esc(sh.unit) + '. ' +
+            (sh.phase === 'arriving' ? 'Coming in to berth ' + sh.berth + ', due alongside at ' + fmtT(sh.arrive) + '.' : sh.phase === 'berthed' ? 'Alongside at berth ' + sh.berth + ' since ' + fmtT(sh.arrive) + '; sails at ' + fmtT(sh.depart) + '.' : 'Heading out to sea.') +
+            (sh.held >= 3 * H ? ' Held by the weather for ' + Math.round(sh.held / H) + ' hours.' : '') + '</p>' + cta('port', 'See the arrivals board', true);
+          view.selectDistrict(-1);
+        } else if (sel.feature) {
+          const f = sel.feature;
           title = esc(f.name);
           if (f.kind === 'site') {
-            const s = C.siteStateAt(f.id, now());
-            html = '<p class="lede" style="font-size:1rem">' + KIND[f.type] + ' in ' + link('district/' + f.district, esc(map.districts[f.district].name)) + '. ' + STATE[s.state] +
-              (s.state === 'building' ? ', due to open ' + fShort.format(s.done) : s.state === 'operating' && s.since > C.epoch ? ' since ' + fYear.format(s.since) : '') + '.</p>' +
-              '<p class="muted">Built or closed according to the Senate\u2019s ' + (f.type === 'coal' ? 'coal plant' : f.type === 'solar' ? 'solar subsidy' : f.type === 'wind' ? 'wind farm' : f.type === 'park' ? 'parks' : 'wildlife zone') + ' laws.</p>';
-          } else {
-            const notes = { senate: 'Where the Pixel Senate sits.', stadium: 'Home of Glacial, the world\u2019s slowest race. A race is always on.', bureau: 'The Weather Bureau keeps the city\u2019s weather records here.',
-              bookmaker: 'Opening soon. Residents will bet on the races here.', press: 'Opening soon. The city\u2019s newspaper will be printed here.', gas: 'Two gas peakers, fired up when the city runs short.', port: 'Containers come and go.' };
-            html = '<p class="lede" style="font-size:1rem">' + esc(notes[f.type] || '') + '</p>' + (f.link ? '<p><a href="' + f.link + '">Visit ' + esc(f.name) + '</a></p>' : '');
-          }
+            const x = C.siteStateAt(f.id, now());
+            const out = x.state === 'operating' && (f.type === 'solar' || f.type === 'wind' || f.type === 'coal') ? Math.round(st.grid[f.type] / Math.max(1, st.ops[f.type])) : null;
+            html = '<p class="lede" style="font-size:1rem">' + KIND[f.type] + ' in ' + link('district/' + f.district, esc(map.districts[f.district].name)) + '. ' + STATE[x.state] +
+              (x.state === 'building' ? ', due to open ' + fShort.format(x.done) : x.state === 'operating' && x.since > C.epoch ? ' since ' + fYear.format(x.since) : '') + '.' +
+              (out !== null ? ' Generating ' + out + ' MW right now.' : '') + '</p>' +
+              '<p class="muted">Built or closed by the Senate\u2019s ' + (f.type === 'coal' ? 'coal plant' : f.type === 'solar' ? 'solar subsidy' : f.type === 'wind' ? 'wind farm' : f.type === 'park' ? 'parks' : 'wildlife zone') + ' laws.</p>' +
+              (f.type === 'park' || f.type === 'wildlife' ? '' : cta('power', 'See the power grid', true));
+          } else html = landmarkCard(f);
         } else if (sel.district >= 0) {
           const d = map.districts[sel.district];
           title = esc(d.name);
-          html = '<p class="lede" style="font-size:1rem">' + esc(C.TILE_NAMES[sel.tile]) + ' in ' + esc(d.name) + ', a ' + character(d).toLowerCase() + ' district of ' + d.residents.toLocaleString() + ' residents.</p>' +
-            (st.dark.indexOf(d.id) >= 0 ? '<p class="miss">The power is off here right now.</p>' : '') + '<p>' + link('district/' + d.id, 'More about ' + esc(d.name)) + '</p>';
+          html = districtCard(d);
         } else { title = 'The sea'; html = '<p class="muted">Nothing here but water.</p>'; }
         set('selTitle', title);
         set('selection', html);
@@ -105,7 +151,7 @@
       function tick() {
         const t = now();
         st = C.stateAt(t); wx = W.sample(t);
-        if (n++ % 15 === 0) view.refresh();
+        n++;
         const g = st.grid;
         set('clock', 'City time ' + fSec.format(t));
         set('barleft', esc(wx.cond) + ', ' + wx.temp.toFixed(1) + '\u00b0C. Air: ' + esc(st.air) + ' (' + st.aqi + ')');
@@ -218,6 +264,31 @@
     }
   };
 
+  // ================================================================ the port
+  V.port = {
+    title: 'Port',
+    render() {
+      const t = now(), d = dayOf(t);
+      const status = (c) => (t < c.arrive - 2 * H ? (c.held >= 3 * H && t >= c.due ? '<span class="miss">Held by weather</span>' : 'Due') : t < c.arrive ? 'Coming in' : t <= c.depart ? '<b>Alongside</b>' : t <= c.depart + 2 * H ? 'Sailing' : 'Sailed');
+      const row = (c) => '<tr>' + td('<b>' + esc(c.name) + '</b>') + td(esc(c.label)) + td(esc(c.from)) + td(c.cargo.toLocaleString() + ' ' + esc(c.unit)) +
+        td(fTime.format(c.arrive) + (dayOf(c.arrive) !== d ? ' <small>' + esc(fShort.format(c.arrive)) + '</small>' : '') + (c.held >= 3 * H ? ' <small>(+' + Math.round(c.held / H) + ' h)</small>' : '')) +
+        td(fTime.format(c.depart) + (dayOf(c.depart) !== d ? ' <small>' + esc(fShort.format(c.depart)) + '</small>' : '')) + td(String(c.berth)) + td(status(c)) + '</tr>';
+      const board = C.portBetween(d - DAY, d + DAY - 1).filter((c) => c.depart + 2 * H >= t - 6 * H).sort((a, b) => a.arrive - b.arrive);
+      const month = C.portBetween(t - 30 * DAY, t).filter((c) => c.arrive <= t);
+      const tot = {};
+      for (const c of month) { const o = (tot[c.type] = tot[c.type] || { n: 0, cargo: 0, held: 0 }); o.n++; o.cargo += c.cargo; if (c.held >= 6 * H) o.held++; }
+      const T2 = C.SHIP_TYPES;
+      const sums = Object.keys(T2).filter((k) => tot[k]).map((k) => '<tr>' + td(esc(T2[k].label)) + td(tot[k].n, 1) + td(tot[k].cargo.toLocaleString() + ' ' + esc(T2[k].unit), 1) + td(tot[k].held, 1) + '</tr>');
+      const held = C.eventsBetween(t - 60 * DAY, t).filter((e) => e.type === 'port.held').reverse().slice(0, 8).map((e) => '<li><time>' + esc(fShort.format(e.ms)) + '</time><span>' + esc(e.headline) + '</span></li>').join('');
+      return head('The Port', 'Container ships call every day and the harbour ferry crosses twice. Coal carriers come as often as the power plants need fuel, and gas tankers when the peakers have been working hard. Storms keep ships outside the harbour.') +
+        '<h2>Arrivals and departures</h2><p class="hint">Yesterday, today and tomorrow, in city time.</p>' +
+        table([{ l: 'Ship' }, { l: 'Type' }, { l: 'From' }, { l: 'Cargo' }, { l: 'Arrives' }, { l: 'Departs' }, { l: 'Berth' }, { l: 'Status' }], board.map(row)) +
+        '<div class="two-col"><section><h2>The last 30 days</h2>' + table([{ l: 'Ships' }, { l: 'Calls', n: 1 }, { l: 'Cargo', n: 1 }, { l: 'Held by weather', n: 1 }], sums) + '</section>' +
+        '<section><h2>Weather holds</h2><ul class="timeline">' + (held || '<li class="muted">No ship has been held in the last 60 days.</li>') + '</ul></section></div>' +
+        '<p class="banner">Coming later: a freight page showing what the city imports and exports, and where its supplies come from.</p>';
+    }
+  };
+
   V.about = {
     title: 'About',
     render() {
@@ -230,7 +301,7 @@
   };
 
   // ---------------------------------------------------------------- routing
-  const ROUTES = { '': 'map', districts: 'districts', district: 'district', power: 'power', about: 'about' };
+  const ROUTES = { '': 'map', districts: 'districts', district: 'district', power: 'power', port: 'port', about: 'about' };
   const NAV = { district: 'districts' };
   let unmount = null;
   function render() {
