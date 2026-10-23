@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pixel City: test bench</title>
+<link rel="stylesheet" href="city.css">
+</head>
+<body>
+<main>
+  <section class="page-head"><h1>Pixel City test bench</h1><p class="lede">Checks that the city is deterministic, follows the maths rules and its upstream dependencies, and reports a year-by-year picture of its power and air.</p></section>
+  <h2>Self-checks</h2>
+  <ul class="timeline" id="checks"><li class="muted">Running…</li></ul>
+  <h2>Year by year</h2>
+  <p class="hint">How the Senate’s energy laws played out: clean energy, blackouts and smog.</p>
+  <div class="table-wrap"><table class="data" id="years"></table></div>
+</main>
+<script src="https://dvexperiments.github.io/Weather/universe.js"></script>
+<script src="https://dvexperiments.github.io/Senate/universe.js"></script>
+<script src="universe.js"></script>
+<script>
+(function () {
+  const C = PixelUniverse.city, D = 86400000, E = C.epoch, $ = (id) => document.getElementById(id);
+  const out = [];
+  const add = (ok, text) => out.push('<li><span class="' + (ok ? 'hit' : 'miss') + '">' + (ok ? 'Pass' : 'Fail') + '</span><span>' + text + '</span></li>');
+  if (!C.ready()) { $('checks').innerHTML = '<li><span class="miss">Fail</span><span>The Weather Bureau or the Senate did not load, so the city cannot run.</span></li>'; return; }
+  setTimeout(() => {
+    const a = C.create(), b = C.create();
+    add(JSON.stringify(a.eventsBetween(E, E + 500 * D)) === JSON.stringify(b.eventsBetween(E, E + 500 * D)), 'Two independent replays of 500 days produce identical events');
+    let same = true;
+    for (let i = 0; i < 12; i++) { const t = E + Math.floor(Math.random() * 600 * D); if (JSON.stringify(a.stateAt(t)) !== JSON.stringify(b.stateAt(t))) same = false; }
+    add(same, 'The city at 12 random moments is identical in both');
+    const t = E + Math.floor(Math.random() * 500 * D);
+    add(!a.eventsBetween(E, t).some((e) => e.ms > t), 'No event from the future is visible at a given moment');
+    const m = C.map();
+    add(m.districts.every((d, i) => d.name === PixelUniverse.senate.districts[i]), 'The sixteen districts match the Senate\u2019s electorates');
+    add(m.features.filter((f) => f.kind === 'site').length === 46, 'All 46 reserved sites found room on the map (' + m.features.filter((f) => f.kind === 'site').length + ')');
+    fetch('universe.js').then((r) => r.text()).then((src) => {
+      const used = [...new Set(src.match(/Math\.\w+/g))].filter((x) => x !== 'Math.floor' && x !== 'Math.imul');
+      $('checks').insertAdjacentHTML('beforeend', '<li><span class="' + (used.length ? 'miss' : 'hit') + '">' + (used.length ? 'Fail' : 'Pass') + '</span><span>The simulation uses only Math.floor and Math.imul' + (used.length ? ' (found ' + used.join(', ') + ')' : '') + '</span></li>');
+    }).catch(() => {});
+    $('checks').innerHTML = out.join('');
+    const end = Math.max(Date.now(), E + 4 * 365 * D);
+    const days = C.create().historyBetween(E, end), ev = a.eventsBetween(E, end);
+    const yr = {};
+    for (const d of days) { const y = d.date.slice(0, 4); const o = (yr[y] = yr[y] || { n: 0, clean: 0, bh: 0, peak: 0, aqi: 0, coal: 0 }); o.n++; o.clean += d.clean; o.bh += d.blackoutHours; o.peak = Math.max(o.peak, d.peak); o.aqi += d.aqi || 0; o.coal += d.energy.coal; }
+    const c = (y, f) => ev.filter((e) => e.time.startsWith(y) && f(e)).length;
+    $('years').innerHTML = '<thead><tr><th>Year</th><th class="n">Days</th><th class="n">Clean energy</th><th class="n">Blackout hours</th><th class="n">Peak demand</th><th class="n">Average air quality</th><th class="n">Smog alerts</th><th class="n">Sites opened</th><th class="n">Sites closed</th></tr></thead><tbody>' +
+      Object.keys(yr).map((y) => { const o = yr[y]; return '<tr><td>' + y + '</td><td class="n">' + o.n + '</td><td class="n">' + (o.clean / o.n).toFixed(0) + '%</td><td class="n">' + o.bh + '</td><td class="n">' + Math.round(o.peak) + ' MW</td><td class="n">' + Math.round(o.aqi / o.n) +
+        '</td><td class="n">' + c(y, (e) => e.type === 'city.smog') + '</td><td class="n">' + c(y, (e) => e.type === 'city.opened') + '</td><td class="n">' + c(y, (e) => e.type === 'city.closure') + '</td></tr>'; }).join('') + '</tbody>';
+  }, 30);
+})();
+</script>
+</body>
+</html>
