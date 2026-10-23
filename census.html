@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Census – Pixel City</title>
+<meta name="description" content="The Pixel City Census Office: all 82,640 residents of the city by name, where they live, who they are and what they think of their city.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 9 9%22 shape-rendering=%22crispEdges%22%3E%3Cpath fill=%22%237F9BB8%22 d=%22M1 3h2v6H1z%22/%3E%3Cpath fill=%22%23C98B6B%22 d=%22M4 1h2v8H4z%22/%3E%3Cpath fill=%22%239AA3AD%22 d=%22M7 4h1v5H7z%22/%3E%3Cpath fill=%22%23FFD678%22 d=%22M4 3h1v1H4zM5 5h1v1H5z%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="city.css">
+<link rel="stylesheet" href="census.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="top-inner">
+    <a class="brand" href="./"><span class="brand-name">Pixel City</span><span class="brand-track"><span class="brand-pixel"></span></span></a>
+    <p class="brand-tag">The hub of the Pixel Universe.</p>
+    <nav class="nav" aria-label="Sections">
+      <a href="./#/" data-view="map">Map</a>
+      <a href="./#/districts" data-view="districts">Districts</a>
+      <a href="./#/power" data-view="power">Power</a>
+      <a href="./#/port" data-view="port">Port</a>
+      <a href="census.html" aria-current="page">Census</a>
+      <a href="./#/about" data-view="about">About</a>
+      <a href="https://dvexperiments.github.io/Glacial/">Glacial</a>
+      <a href="https://dvexperiments.github.io/Senate/">Senate</a>
+      <a href="https://dvexperiments.github.io/Weather/">Weather</a>
+      <a href="https://dvexperiments.github.io/PixelFM/">Pixel FM</a>
+    </nav>
+  </div>
+</header>
+<p class="banner" id="travel" hidden style="max-width:var(--wrap);margin:12px auto 0"></p>
+<main id="main" tabindex="-1"><section class="page-head"><p class="kicker">The Census Office</p><h1>Counting…</h1><p class="lede">Every resident of Pixel City is being counted. There are quite a few.</p></section></main>
+<footer class="foot">
+  <p>The Census Office keeps a file on every resident of Pixel City. Every pixel lives in a real building on the map, and their opinions come from the city as it is. Like everything in the Pixel Universe, it is the same for every visitor.</p>
+  <p><a href="./">Back to the map</a></p>
+</footer>
+<noscript><p style="max-width:1160px;margin:0 auto;padding:0 24px">The census is computed in your browser, so it needs JavaScript.</p></noscript>
+<script src="https://dvexperiments.github.io/Weather/universe.js"></script>
+<script src="https://dvexperiments.github.io/Senate/universe.js"></script>
+<script src="universe.js"></script>
+<script src="census.js"></script>
+<script src="census-page.js"></script>
+<!-- Pixel FM: a small radio in the corner, playing the same broadcast as the station -->
+<script src="https://dvexperiments.github.io/PixelFM/universe.js"></script>
+<script src="https://dvexperiments.github.io/PixelFM/js/audio.js"></script>
+<script src="https://dvexperiments.github.io/PixelFM/js/voice.js"></script>
+<script src="https://dvexperiments.github.io/PixelFM/js/widget.js"></script>
+</body>
+</html>

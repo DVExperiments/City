@@ -320,7 +320,13 @@
     window.scrollTo(0, 0);
   }
   if (AT) {
-    document.querySelectorAll('.nav a, .brand').forEach((a) => (a.href = AT + a.getAttribute('href')));
+    // keep the time-travel setting on the city's own pages; leave links to other sites alone
+    document.querySelectorAll('.nav a, .brand').forEach((a) => {
+      const href = a.getAttribute('href');
+      if (/^https?:/.test(href)) return;
+      const i = href.indexOf('#');
+      a.setAttribute('href', (i < 0 ? href : href.slice(0, i)) + AT + (i < 0 ? '' : href.slice(i)));
+    });
     const b = document.getElementById('travel');
     b.hidden = false;
     b.innerHTML = 'Watching the city from ' + esc(new Date(now()).toISOString().slice(0, 16).replace('T', ' ')) + ' city time onwards. <a href="' + location.pathname + location.hash + '">Return to the present</a>.';
