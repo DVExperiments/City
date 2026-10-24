@@ -122,7 +122,11 @@
         if (f.type === 'census') return '<p class="lede" style="font-size:1rem">The Census Office keeps a file on every resident of Pixel City: ' + st.residents.toLocaleString() + ' of them, by name.</p>' + cta(f.link, 'Visit the Census Office');
         if (f.type === 'radio') return '<p class="lede" style="font-size:1rem">Home of Pixel FM, 88.8. Music for pixels, and anyone near one, around the clock.</p>' + cta(f.link, 'Listen live');
         if (f.type === 'observatory') return '<p class="lede" style="font-size:1rem">From up here you can see the whole Pixel Universe at once: the race, the city, the Senate, the weather and the news.</p>' + cta(f.link, 'Look through the telescope');
-        if (f.planned) return '<p class="lede" style="font-size:1rem">' + esc(f.name) + ' is coming soon. The ground has been cleared and the fence is up.</p>';
+        if (C.isPlanned ? C.isPlanned(f, t) : f.planned) return '<p class="lede" style="font-size:1rem">' + esc(f.name) + ' is coming soon. The ground has been cleared and the fence is up.</p>';
+        if (f.type === 'school') {
+          const sc = window.PixelUniverse.school, ss = sc && sc.ready() ? sc.stateAt(t) : null;
+          return '<p class="lede" style="font-size:1rem">The city’s secondary school. ' + (ss && ss.started ? ss.roll.toLocaleString() + ' students in Years 9 to 13. ' + (ss.closed ? 'Closed today for the storm.' : ss.inSession ? 'Lessons are on.' : ss.term ? 'No lessons right now.' : 'The school is on holiday.') : 'Every resident in Years 9 to 13 is enrolled.') + '</p>' + cta(f.link, 'Visit Pixel High');
+        }
         return '';
       }
       function showSelection(sel) {

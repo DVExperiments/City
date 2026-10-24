@@ -210,10 +210,11 @@
       px(X, Y, W, 7, '#14212A');
       for (let k = 0; k < Math.min(text.length, Math.floor((W - 4) / 3)); k++) if (text[k] !== ' ') px(X + 2 + k * 3, Y + 2 + (h32(text.charCodeAt(k)) < 0.5 ? 0 : 1), 2, 2, '#F2D024');
     }
-    function paintFeature(f, site, night) {
+    const stillPlanned = (f, t) => (C.isPlanned ? C.isPlanned(f, t) : !!f.planned);
+    function paintFeature(f, site, night, t) {
       const X = f.x * S, Y = f.y * S, W = f.w * S, HH = f.h * S;
       if (f.kind === 'landmark') {
-        if (f.planned) {
+        if (stillPlanned(f, t)) {
           // a plot for a building still to come: cleared ground, a hazard fence and a sign
           dither(X, Y, W, HH, '#A6966E', '#9C8C65', f.id);
           for (let k = 0; k < W; k += 6) { px(X + k, Y, 3, 2, '#F2C230'); px(X + k + 3, Y, 3, 2, '#14212A'); px(X + k, Y + HH - 2, 3, 2, '#14212A'); px(X + k + 3, Y + HH - 2, 3, 2, '#F2C230'); }
@@ -292,6 +293,24 @@
             px(X + W / 2 - 3, Y + HH / 2 - 24, 6, 24, '#14212A'); // the slit in the dome
             break;
           }
+          case 'school': {
+            // Pixel High: the main building around a courtyard, a running track round the playing field, and the
+            // school's crest, four great pixels in red, green, blue and alpha, on the roof
+            dither(X, Y, W, HH, PAL.grass[0], PAL.grass[1], f.id);
+            const bw = Math.floor(W * 0.46);
+            bevel(X + 4, Y + 4, bw, 16, '#D9CDB6', 3); bevel(X + 4, Y + HH - 20, bw, 16, '#D9CDB6', 3); bevel(X + 4, Y + 4, 16, HH - 8, '#D9CDB6', 3);
+            px(X + 22, Y + 22, bw - 20, HH - 44, '#C9C1AE');
+            for (let k = 0; k < bw - 10; k += 6) { px(X + 8 + k, Y + 8, 3, 3, '#7FA3BF'); px(X + 8 + k, Y + HH - 16, 3, 3, '#7FA3BF'); }
+            const cx = X + 26, cy = Y + 26, cs = 9;
+            bevel(cx, cy, cs, cs, '#E5484D', 1); bevel(cx + cs + 1, cy, cs, cs, '#3FB566', 1); bevel(cx, cy + cs + 1, cs, cs, '#3D7FE0', 1); bevel(cx + cs + 1, cy + cs + 1, cs, cs, '#B9C3CA', 1);
+            const fx0 = X + bw + 12, fw = W - bw - 16, fy0 = Y + 6, fh = HH - 12;
+            px(fx0, fy0, fw, fh, '#B5523B');
+            for (let k = 3; k < 10; k += 3) { px(fx0 + k, fy0 + k, fw - 2 * k, 1, 'rgba(255,255,255,0.55)'); px(fx0 + k, fy0 + fh - k - 1, fw - 2 * k, 1, 'rgba(255,255,255,0.55)'); px(fx0 + k, fy0 + k, 1, fh - 2 * k, 'rgba(255,255,255,0.55)'); px(fx0 + fw - k - 1, fy0 + k, 1, fh - 2 * k, 'rgba(255,255,255,0.55)'); }
+            dither(fx0 + 11, fy0 + 11, fw - 22, fh - 22, '#5FA052', '#55934A', 3);
+            px(fx0 + fw / 2, fy0 + 11, 1, fh - 22, 'rgba(255,255,255,0.6)');
+            ['#E5484D', '#3FB566', '#3D7FE0', '#B9C3CA'].forEach((c, k) => { px(X + bw + 4, Y + 10 + k * 16, 1, 10, '#3B4045'); px(X + bw + 5, Y + 10 + k * 16, 5, 4, c); });
+            break;
+          }
           case 'gas':
             px(X, Y, W, HH, '#8D8F8A');
             disc(X + 14, Y + 20, 11, '#5E615C'); disc(X + 13, Y + 19, 10, '#D2D5D0');
@@ -352,7 +371,7 @@
     function paintWorld(state, light) {
       const night = light < 0.5, dark = new Set(state.dark || []);
       for (let y = 0; y < map.H; y++) for (let x = 0; x < map.W; x++) if (map.owner[y * map.W + x] < 0) paintTile(x, y);
-      for (const f of map.features) paintFeature(f, f.kind === 'site' ? state.sites[siteIndex[f.id]] : null, night);
+      for (const f of map.features) paintFeature(f, f.kind === 'site' ? state.sites[siteIndex[f.id]] : null, night, state.time);
       if (light < 1) { g.fillStyle = 'rgba(8,14,32,' + ((1 - light) * 0.68).toFixed(3) + ')'; g.fillRect(0, 0, world.width, world.height); }
       if (night) {
         for (let y = 0; y < map.H; y++) for (let x = 0; x < map.W; x++) {
@@ -370,7 +389,7 @@
       if (dark.size) { g.fillStyle = 'rgba(10,20,45,0.45)'; for (let i = 0; i < map.tiles.length; i++) if (dark.has(map.district[i])) g.fillRect((i % map.W) * S, Math.floor(i / map.W) * S, S, S); }
     }
     function ensureWorld(state, light) {
-      const key = Math.round(light * 8) + '|' + (state.dark || []).join(',') + '|' + state.sites.map((s) => s.state[0]).join('');
+      const key = Math.round(light * 8) + '|' + (state.dark || []).join(',') + '|' + state.sites.map((s) => s.state[0]).join('') + '|' + map.features.filter((f) => f.planned).map((f) => (stillPlanned(f, state.time) ? 'p' : 'o')).join('');
       if (key !== worldKey) { paintWorld(state, light); worldKey = key; }
     }
 

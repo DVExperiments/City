@@ -240,14 +240,14 @@
   const RENEWAL_FALLBACK = Date.UTC(2026, 10, 1);
   const URL_BASE = 'https://dvexperiments.github.io/';
   const NEW_BUILDINGS = [
-    // type, name, width, height, near x, near y, link, planned
+    // type, name, width, height, near x, near y, link, planned, opens (a planned building opens at this moment)
     ['museum', 'The Museum of the Pixel Universe', 6, 4, 56, 52, URL_BASE + 'Museum/', false],
     ['census', 'The Census Office', 4, 3, 82, 52, URL_BASE + 'City/census.html', false],
     ['radio', 'Pixel FM Studios', 4, 4, 62, 30, URL_BASE + 'PixelFM/', false],
     ['observatory', 'The Universe Observatory', 5, 5, 104, 16, URL_BASE + 'Universe/', false],
     ['bank', 'The Bank of Pixel City', 5, 4, 76, 46, null, true],
     ['jobs', 'The Job Centre', 4, 3, 64, 68, null, true],
-    ['school', 'Pixel High', 8, 5, 38, 40, null, true],
+    ['school', 'Pixel High School', 8, 5, 38, 40, URL_BASE + 'PixelHigh/', true, Date.UTC(2026, 10, 15, 20, 30)], // 8:30am, 16 November, city time
     ['university', 'Pixel University', 10, 7, 84, 86, null, true]
   ];
   function renew(m) {
@@ -265,10 +265,10 @@
       }
       return null;
     };
-    for (const [type, name, w, h, x0, y0, link, planned] of NEW_BUILDINGS) {
+    for (const [type, name, w, h, x0, y0, link, planned, opens] of NEW_BUILDINGS) {
       const p = spot(x0, y0, w, h);
       if (!p) continue;
-      const f = { kind: 'landmark', type, name, x: p.x, y: p.y, w, h, link, planned, id: m.features.length };
+      const f = { kind: 'landmark', type, name, x: p.x, y: p.y, w, h, link, planned, opens: opens || null, id: m.features.length };
       f.district = m.district[at(p.x + (w >> 1), p.y + (h >> 1))];
       for (let yy = p.y; yy < p.y + h; yy++) for (let xx = p.x; xx < p.x + w; xx++) { m.owner[at(xx, yy)] = f.id; m.tiles[at(xx, yy)] = T.LANDMARK; }
       m.features.push(f);
@@ -602,6 +602,8 @@
       // map(): the founding map (unchanged, for sites whose history depends on it). map(t): the map in force at t.
       map: (t) => (!ready() ? null : t === undefined ? ensureMap() : mapAt(t)), T, TILE_NAMES, RESIDENTS, JOBS, MW,
       renewal: renewalAt(), renewalAt, offsetAt,
+      /** Whether a building is still a fenced plot at time t (planned, and not yet open). */
+      isPlanned: (f, t) => !!(f && f.planned && !(f.opens && t >= f.opens)),
       stateAt, eventsBetween, historyBetween,
       shipsAt: (t) => (ready() && t >= EPOCH ? shipsAt(t) : []),
       portBetween: (from, to) => {

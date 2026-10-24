@@ -104,6 +104,12 @@
     const parks = [];
     try { const st = C.stateAt(dayStart + 12 * H); for (const s of st.sites) if (s.state === 'operating' && (s.type === 'park' || s.type === 'wildlife')) { const f = P.m.features[s.id]; parks.push({ x: f.x, y: f.y, w: f.w, h: f.h, name: s.name, district: f.district }); } } catch (e) { /* no parks today */ }
     const stadium = P.landmark('stadium'), museum = P.landmark('museum'), bookmaker = P.landmark('bookmaker');
+    // Pixel High, once it has opened: the school's own calendar decides the school days, if the school is loaded
+    const high = P.landmark('school'), SCH = U().school;
+    const highOpen = !!(high && (!C.isPlanned || !C.isPlanned(high, dayStart + 12 * H)));
+    const highToday = highOpen && (SCH && SCH.ready() ? SCH.inSession(dayStart + 10 * H) : !weekend);
+    const highIn = high && { x: high.x + 0.6, y: high.y + 0.6, w: high.w * 0.45, h: high.h - 1.2 };
+    const highField = high && { x: high.x + high.w * 0.58, y: high.y + 0.9, w: high.w * 0.36, h: high.h - 1.8 };
     const H0 = dayStart; // city midnight, as a moment
     const dateKey = new Date(H0 + off).toISOString().slice(0, 10);
     const inside = (pl, r) => ({ x: pl.x + 0.6 + r() * (pl.w - 1.2), y: pl.y + 0.6 + r() * (pl.h - 1.2) });
@@ -143,7 +149,13 @@
         if (gp && stadium && sociable > 0.55 && !wet(at(13))) {
           add(at(11 + r() * 2), inside({ x: stadium.x - 1, y: stadium.y + stadium.h, w: stadium.w + 2, h: 1.5 }, r), (2 + r() * 3) * H, 'At the Glacial Stadium for the Grand Prix', true, 'Going to the Grand Prix');
         }
-        if (age < 18) {
+        if (age >= 13 && age <= 17 && highOpen && highToday) {
+          // Pixel High: in by 8:45, out on the field at lunch, home after the last bell
+          add(at(8.1 + r() * 0.5), inside(highIn, r), (12.5 - 8.6) * H, 'In class at Pixel High', false, 'Walking to Pixel High');
+          if (r() < 0.5) add(at(12.5), inside(highField, r), 0.7 * H, 'At lunch on the Pixel High field', true, 'Out to the field'); // the rest eat in the hall
+          add(at(13.25), inside(highIn, r), 2 * H, 'In class at Pixel High', false, 'Back to class');
+          if (square && r() < 0.4 && !wet(at(15.6))) add(at(15.4 + r() * 0.5), inside(square, r), (0.5 + r()) * H, 'Hanging out in ' + square.name, true, 'Off to meet friends');
+        } else if (age < 18) {
           if (!weekend && age >= 5) {
             const school = P.jobs[homeD][Math.floor(pr() * P.jobs[homeD].length)] || job;
             add(at(8 + r() * 0.5), { x: school.x + 0.5, y: school.y + 0.5 }, (6 + r()) * H, 'At school', false, 'Walking to school');

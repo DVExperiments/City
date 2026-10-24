@@ -506,6 +506,8 @@
       return Object.assign({ time: t, started: true, version: VERSION, panel: panelAt(t), residentOfTheDay: residentOfTheDay(t) }, s);
     },
     eventsBetween, person, summary, residentsOf, cohort, search, stats, panelAt, panelsBetween, residentOfTheDay,
+    /** A resident's identity and character only: name, colour, birth, home, traits. Cheap, for sites that need many. */
+    character: (id) => { const c = character(id); return c ? named(c) : null; },
     homes: () => (ready() ? homes() : []), householdAt: (homeIndex, t) => residentsOfHome(homeIndex, t), movesBetween, ageAt
   };
 })(typeof window !== 'undefined' ? window : globalThis);
