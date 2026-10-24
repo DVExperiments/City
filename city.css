@@ -243,3 +243,15 @@ table.data { width: 100%; border-collapse: collapse; font-size: 0.97rem; }
 .cta:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 @media (prefers-color-scheme: dark) { .cta { color: #0E171C; } }
 #selection .facts dd { font-size: 1.1rem; }
+
+/* the selection card: on the map, over its lower left corner, so details are always in view */
+.selcard { position: absolute; left: 22px; bottom: 54px; z-index: 4; width: min(400px, calc(100% - 44px)); max-height: min(62%, 520px); overflow: auto; padding: 16px 18px 14px;
+  background: rgba(7,12,22,0.94); border: 1px solid rgba(70,214,255,0.3); border-radius: 8px; box-shadow: 0 12px 34px rgba(0,0,0,0.5);
+  --ink: #E1E9EC; --muted: #9FB0BA; --link: #82D6FF; --line: #2C3A42; --line-soft: #1F2B33; --surface: #0E171C; color: var(--ink); }
+.selcard h2 { font-size: 1.3rem; margin: 0 28px 8px 0; color: #F3FCFF; }
+.selcard .lede { color: var(--ink); }
+.selcard a { color: var(--link); }
+.selclose { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; border: 0; border-radius: 4px; background: transparent; color: #C4F7FF; font-size: 1.4rem; line-height: 1; cursor: pointer; }
+.selclose:hover { background: rgba(70,214,255,0.15); }
+.maphint { opacity: 0.7; }
+@media (max-width: 600px) { .selcard { left: 10px; right: 10px; width: auto; bottom: 46px; max-height: 55%; } .maphint { display: none; } }

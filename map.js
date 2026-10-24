@@ -70,6 +70,25 @@
     const isLine = (t) => t === T.ROAD || t === T.STREET || t === T.BRIDGE;
     const squareAt = {};
     for (const q of map.squares || []) squareAt[q.x + ',' + q.y] = q;
+    // Every site in the Pixel Universe has a building. Jaggy Square, downtown by the Senate, is the Pixel Exchange's open-air
+    // trading floor; the other squares are where each district's communities meet (Pixel City Society).
+    const BASE = 'https://dvexperiments.github.io/';
+    const ABOUT = { senate: 'Where the Pixel Senate sits', stadium: 'Home of Glacial: the slowest race in the universe', bureau: 'The Weather Bureau', bookmaker: 'Odds on every race', press: 'Where the Daily Pixel is written',
+      museum: 'The history of the Pixel Universe', census: 'A file on every resident', radio: 'Pixel FM, 88.8', observatory: 'The whole Pixel Universe at a glance', bank: 'The Bank of Pixel City', jobs: 'Work, and looking for it',
+      school: 'Pixel High School', port: 'Ships, cargo and the export dock', gas: 'Gas peakers for the grid', university: 'Planned: not yet open' };
+    const EXTRA_LINKS = { port: [BASE + 'Exchange/#/freight', 'Click for freight on the Pixel Exchange'], gas: ['#/power', 'Click for the power grid'] };
+    const places = [];
+    for (const f of map.features) if (f.kind === 'landmark') {
+      const extra = EXTRA_LINKS[f.type], link = f.link || (extra && extra[0]) || null;
+      places.push({ f, x: f.x, y: f.y, w: f.w, h: f.h, name: f.name, about: ABOUT[f.type] || '', link, hint: link ? (extra ? extra[1] : 'Click to visit') : '', color: f.type === 'bank' ? '#F2C230' : '#46D6FF' });
+    }
+    for (const q of map.squares || []) {
+      const dname = map.districts[q.district].name, exchange = dname === 'Jaggy';
+      places.push(exchange ? { square: q, exchange: true, x: q.x, y: q.y, w: q.w || 3, h: q.h || 3, name: 'The Pixel Exchange', about: 'The trading floor, in Jaggy Square', link: BASE + 'Exchange/', hint: 'Click to visit', color: '#20C3AF' }
+        : { square: q, x: q.x, y: q.y, w: q.w || 3, h: q.h || 3, name: q.name, about: 'Where the communities of ' + dname + ' meet', link: 'society.html', hint: 'Click for Pixel City Society', color: PIXEL_COLOR[dname] || '#F3F6F7' });
+    }
+    const placeAt = (x, y) => { for (const p of places) if (x >= p.x && y >= p.y && x < p.x + p.w && y < p.y + p.h) return p; return null; };
+    const placeHref = (p) => { if (!p.link) return null; const q = location.search; return p.link.indexOf('#') === 0 ? p.link : q ? p.link.replace(/(#|$)/, q + '$1') : p.link; };
     // district borders, as line segments, computed once
     const borders = [], dBorders = map.districts.map(() => []);
     for (let y = 0; y < map.H; y++) for (let x = 0; x < map.W; x++) {
@@ -465,7 +484,7 @@
           // of the pixel the district is named after
           for (let yy = 0; yy < S; yy += 4) for (let xx = 0; xx < S; xx += 4) px(X + xx, Y + yy, 4, 4, ((xx + yy) / 4 + x + y) % 2 ? L.sub2 : mix(L.sub, '#FFFFFF', 0.08));
           const q = squareAt[(x - 1) + ',' + (y - 1)];
-          if (q) { const c = PIXEL_COLOR[map.districts[q.district].name] || '#F3F6F7'; px(X - 2, Y - 2, 20, 20, rgba(c, 0.12)); px(X + 1, Y + 1, 14, 14, rgba(c, 0.25)); bevel(X + 4, Y + 3, 8, 8, c, 2); if (look[q.district].physics === 'dead') px(X + 7, Y + 6, 2, 2, '#FF2A2A'); }
+          if (q && map.districts[q.district].name === 'Jaggy') { /* the Exchange's trading floor: drawn after the ground */          } else if (q) { const c = PIXEL_COLOR[map.districts[q.district].name] || '#F3F6F7'; px(X - 2, Y - 2, 20, 20, rgba(c, 0.12)); px(X + 1, Y + 1, 14, 14, rgba(c, 0.25)); bevel(X + 4, Y + 3, 8, 8, c, 2); if (look[q.district].physics === 'dead') px(X + 7, Y + 6, 2, 2, '#FF2A2A'); }
           break;
         }
         case T.HOUSE: case T.APARTMENT: case T.OFFICE: case T.SHOP: case T.FACTORY: case T.WAREHOUSE: case T.DOCK:
@@ -675,11 +694,23 @@
       }
     }
 
+    function tradingFloor() { // the Pixel Exchange, an open-air trading floor under a ticker board, on Jaggy Square
+      for (const q of map.squares || []) {
+        if (map.districts[q.district].name !== 'Jaggy') continue;
+        const X0 = q.x * S, Y0 = q.y * S;
+        slab(X0 + 2, Y0 + 2, 44, 44, '#0B1418', '#20C3AF');
+        px(X0 + 6, Y0 + 6, 36, 12, '#02060B');
+        for (let k = 0; k < 8; k++) px(X0 + 8 + k * 4, Y0 + 9 + (k % 3), 3, 6 - (k % 3), k % 3 === 2 ? '#FF3B6B' : '#2BFF88');
+        for (let k = 0; k < 4; k++) for (let j = 0; j < 2; j++) bevel(X0 + 8 + k * 9, Y0 + 24 + j * 9, 6, 6, j ? '#1F3A40' : '#28505A', 0);
+        px(X0 + 22, Y0 + 42, 4, 4, '#20C3AF');
+      }
+    }
     const LIT = { [T.HOUSE]: 0.45, [T.APARTMENT]: 0.75, [T.SHOP]: 0.6, [T.OFFICE]: 0.6, [T.FACTORY]: 0.35, [T.WAREHOUSE]: 0.25 };
     function paintWorld(state, light) {
       const night = light < 0.5, dark = new Set(state.dark || []);
       for (let y = 0; y < map.H; y++) for (let x = 0; x < map.W; x++) if (map.owner[y * map.W + x] < 0) paintTile(x, y);
       for (const f of map.features) paintFeature(f, f.kind === 'site' ? state.sites[siteIndex[f.id]] : null, night, state.time);
+      tradingFloor();
       tear();
       // night on a screen is the backlight dimming; what emits its own light keeps shining
       if (light < 1) { g.fillStyle = 'rgba(1,3,10,' + ((1 - light) * 0.5).toFixed(3) + ')'; g.fillRect(0, 0, world.width, world.height); }
@@ -698,7 +729,7 @@
           for (let k = 0; k < 6; k++) if (h32(i * 6 + k) < p) px(bx + 1 + Math.floor(h32(i * 17 + k) * (bw - 3)), by + 1 + Math.floor(h32(i * 19 + k) * (bh - 3)), 2, 2, h32(i + k) < 0.7 ? L.light : '#FFFFFF');
         }
         // the monuments in the squares glow at night
-        for (const q of map.squares || []) { const c = PIXEL_COLOR[map.districts[q.district].name] || '#F3F6F7'; px((q.x + 1) * S, (q.y + 1) * S - 3, 16, 16, rgba(c, 0.25)); px((q.x + 1) * S + 4, (q.y + 1) * S + 3, 8, 8, c); if (look[q.district].physics === 'dead') px((q.x + 1) * S + 7, (q.y + 1) * S + 6, 2, 2, '#FF2A2A'); }
+        for (const q of map.squares || []) { if (map.districts[q.district].name === 'Jaggy') { px(q.x * S + 6, q.y * S + 6, 36, 12, 'rgba(43,255,136,0.25)'); continue; } const c = PIXEL_COLOR[map.districts[q.district].name] || '#F3F6F7'; px((q.x + 1) * S, (q.y + 1) * S - 3, 16, 16, rgba(c, 0.25)); px((q.x + 1) * S + 4, (q.y + 1) * S + 3, 8, 8, c); if (look[q.district].physics === 'dead') px((q.x + 1) * S + 7, (q.y + 1) * S + 6, 2, 2, '#FF2A2A'); }
       }
       // a district in blackout has lost its signal
       if (dark.size) {
@@ -789,7 +820,21 @@
       if (top + 100 > hr.height) top = r.top - hr.top + hoverPerson.y - 96;
       tip.style.left = left + 'px'; tip.style.top = top + 'px';
     }
-    function hideTip() { tip.style.display = 'none'; hoverPerson = null; }
+    function hideTip() { tip.style.display = 'none'; hoverPerson = null; hoverInfo = null; }
+    let hoverInfo = null;
+    function infoTip(o) { // a building or a moving packet: what it is, and what clicking does
+      if (!host) return;
+      hoverInfo = o;
+      tip.innerHTML = '<b style="display:flex;align-items:center;gap:6px;font-size:14px"><span style="width:9px;height:9px;background:' + o.color + ';display:inline-block"></span>' + escapeHtml(o.title) + '</b>' +
+        (o.line ? '<span style="color:#A9B8C0">' + escapeHtml(o.line) + '</span>' : '') + (o.hint ? '<br><span style="color:#8496A0;font-size:12px">' + escapeHtml(o.hint) + '</span>' : '');
+      tip.style.display = 'block';
+      const r = canvas.getBoundingClientRect(), hr = host.getBoundingClientRect();
+      let left = r.left - hr.left + o.x + 14, top = r.top - hr.top + o.y + 14;
+      if (left + 250 > hr.width) left = r.left - hr.left + o.x - 250;
+      if (top + 90 > hr.height) top = r.top - hr.top + o.y - 86;
+      tip.style.left = left + 'px'; tip.style.top = top + 'px';
+    }
+    function carAt(p) { let best = null, bd = 64; for (const c of cars) if (c.seen === frameNo) { const d = (c.sx - p.x) * (c.sx - p.x) + (c.sy - p.y) * (c.sy - p.y); if (d < bd) { bd = d; best = c; } } return best; }
     const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     function personAt(p) {
       let best = null, bd = 64;
@@ -833,7 +878,41 @@
     }
     // a faint scanline over the whole screen, made once
     const scan = (() => { const c = document.createElement('canvas'); c.width = 1; c.height = 3; const k = c.getContext('2d'); k.fillStyle = 'rgba(0,0,0,0.16)'; k.fillRect(0, 2, 1, 1); return ctx.createPattern(c, 'repeat'); })();
+    // where a packet is going: freight along the supply chain between real businesses, pixels to work, home, the shops
+    let names = null, namesDay = -1;
+    function cityNames() {
+      const d = Math.floor(lastT / DAY);
+      if (names && namesDay === d) return names;
+      const U2 = window.PixelUniverse || {}, by = {}, shops = {}, streets = [];
+      try { for (const f of U2.commerce && U2.commerce.ready() ? U2.commerce.firmsAt(lastT) : []) if (f.open) { (by[f.kind] = by[f.kind] || []).push(f.name); if (f.kind === 'shop') (shops[f.line] = shops[f.line] || []).push(f.name); } } catch (e) { /* the Exchange isn't here */ }
+      try { const seen = {}; for (const h of K && K.homes ? K.homes() : []) { const st = h.address.replace(/^(Flat \d+, |Flat \d+ above |Above )?\d+[A-Z]? /, ''); if (!seen[st]) { seen[st] = 1; streets.push(st); } } } catch (e) { /* no census */ }
+      names = { by, shops, streets, landmarks: places.filter((p) => p.link).map((p) => p.name) }; namesDay = d;
+      return names;
+    }
+    function journey(car) {
+      const N = cityNames(), any = (a, fb) => (a && a.length ? a[Math.floor(Math.random() * a.length)] : fb);
+      const firm = (k, fb) => any(N.by[k], fb), shop = (line) => any(line ? N.shops[line] : [].concat(...Object.values(N.shops)), 'a shop');
+      if (car.freight) {
+        const routes = [
+          () => ['Carrying raw colour', 'From the export dock to ' + firm('palettes', 'a Palette Refinery')],
+          () => ['Carrying palettes', 'From ' + firm('palettes', 'a Palette Refinery') + ' to ' + firm('textures', 'a Texture Foundry')],
+          () => ['Carrying textures', 'From ' + firm('textures', 'a Texture Foundry') + ' to ' + firm('sprites', 'a Render Plant')],
+          () => ['Carrying codecs', 'From ' + firm('codecs', 'the Compression Works') + ' to ' + firm('sprites', 'a Render Plant')],
+          () => ['Carrying sprites for export', 'From ' + firm('sprites', 'a Render Plant') + ' to the export dock'],
+          () => ['Restocking the shelves', 'From ' + firm('distribution', 'Data Distribution') + ' to ' + shop()],
+          () => ['Carrying patches', 'From ' + firm('cache', 'the Cache') + ' to ' + shop('Patch Shop')]];
+        return routes[Math.floor(Math.random() * routes.length)]();
+      }
+      const hour = Math.floor((((lastT + (C.offsetAt ? C.offsetAt(lastT) : 0)) % DAY) + DAY) % DAY / H), gp = new Date(lastT).getUTCDate() === 1;
+      if (gp && Math.random() < 0.35) return ['Going to the Glacial Stadium', 'For the Grand Prix'];
+      if (hour >= 6 && hour < 10) return ['Going to work', 'At ' + any([].concat(...Object.values(N.by)), 'an office downtown')];
+      if (hour >= 16 && hour < 20) return ['Going home', 'To ' + any(N.streets, 'a street across town')];
+      if (hour >= 10 && hour < 16) { const r = Math.random(); return r < 0.4 ? ['Off to the shops', 'To ' + shop()] : r < 0.7 ? ['Going to ' + any(N.landmarks, 'the Museum'), 'On an errand'] : ['Making a delivery', 'For ' + firm('office', 'an office downtown')]; }
+      return Math.random() < 0.5 ? ['Heading home', 'From ' + any(N.landmarks, 'the Glacial Stadium')] : ['On the night shift', 'At ' + firm('sprites', 'a Render Plant')];
+    }
+    let frameNo = 0;
     function frame(state, light, x, t) {
+      frameNo++;
       const now = performance.now(), dt = Math.min(0.1, (now - lastNow) / 1000);
       lastNow = now; lastT = t;
       ensureWorld(state, light);
@@ -924,6 +1003,27 @@
           for (let k = 0; k < 4; k++) ctx.fillRect(fx + f.w * z / 2 - z * 0.08, fy - (k + 1) * z * 0.9, Math.max(1, z * 0.16), z * 0.5);
         }
       }
+      // visitors: pixels walking in and out of every building with a page, busier by day
+      if (!reduce && z >= 5) {
+        const hour = (((t + (C.offsetAt ? C.offsetAt(t) : 0)) % DAY) + DAY) % DAY / H, day = hour >= 7 && hour < 19 ? 1 : hour >= 19 && hour < 23 ? 0.5 : 0.15;
+        places.forEach((pl, n) => {
+          if (!pl.link) return;
+          const fx = sx(pl.x), fy = sy(pl.y);
+          if (fx > cw + 40 || fy > ch + 40 || fx + pl.w * z < -40 || fy + pl.h * z < -40) return;
+          const busy = pl.f && pl.f.type === 'stadium' ? (new Date(t).getUTCDate() === 1 ? 14 : 6) : pl.square ? 4 : 3;
+          const count = Math.max(1, Math.round(busy * day));
+          for (let j = 0; j < count; j++) {
+            const period = 7000 + ((n * 13 + j * 7) % 9) * 900, ph = ((now / period) + j * 0.37 + n * 0.11) % 1;
+            const out = ph < 0.5 ? ph * 2 : (1 - ph) * 2; // out of the door and back again
+            const side = (n + j) % 3, door = pl.x + pl.w * (0.3 + 0.4 * ((j * 0.618) % 1));
+            const wx = side === 0 ? door : side === 1 ? pl.x - out * 1.6 : pl.x + pl.w + out * 1.6, wy = side === 0 ? pl.y + pl.h + out * 1.6 : pl.y + pl.h * (0.3 + 0.4 * ((j * 0.37) % 1));
+            ctx.globalAlpha = 0.35 + 0.65 * Math.min(1, out * 3);
+            ctx.fillStyle = PAL.neon[(n * 3 + j) % PAL.neon.length];
+            ctx.fillRect(sx(wx) - z * 0.11, sy(wy) - z * 0.11, Math.max(2, z * 0.22), Math.max(2, z * 0.22));
+          }
+        });
+        ctx.globalAlpha = 1;
+      }
       for (const s of state.ships || []) drawShip(s);
       // packets on the data buses: as many as the city's traffic, each with a short fading trail
       const hour = (((t + (C.offsetAt ? C.offsetAt(t) : 0)) % DAY) + DAY) % DAY / H;
@@ -931,7 +1031,8 @@
       const want = reduce ? 0 : Math.round(170 * busy * (1 - (state.levels['policy.trafficLimits'] || 0) * 0.15));
       while (cars.length < want) {
         const vertical = Math.random() < 0.5, line = vertical ? 6 + 13 * Math.floor(Math.random() * 10) : 4 + 11 * Math.floor(Math.random() * 10);
-        cars.push({ vertical, line, p: Math.random() * (vertical ? map.H : map.W), v: (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3), c: pick(['#2BFF88', '#A6FFD6', '#46D6FF', '#FFD23F', '#FF5FA2', '#F4F4F4'], Math.random()) });
+        const freight = Math.random() < 0.4; // freight runs along the supply chain; the rest are pixels going about their day
+        cars.push({ vertical, line, p: Math.random() * (vertical ? map.H : map.W), v: (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 3), freight, c: freight ? pick(['#FFD23F', '#46D6FF', '#FF8A3D'], Math.random()) : pick(['#2BFF88', '#A6FFD6', '#FF5FA2', '#F4F4F4'], Math.random()) });
       }
       if (cars.length > want) cars.length = want;
       for (const car of cars) {
@@ -952,6 +1053,7 @@
         }
         ctx.fillStyle = car.c;
         ctx.fillRect(cxp, cyp, pw, ph);
+        car.sx = cxp + pw / 2; car.sy = cyp + ph / 2; car.seen = frameNo;
       }
       drawPeople(t, light);
       // glitches (City): drawn while they last
@@ -1047,7 +1149,9 @@
       }
       return null;
     }
+    let lastPointerMouse = true;
     canvas.addEventListener('pointerdown', (e) => {
+      lastPointerMouse = e.pointerType === 'mouse';
       canvas.setPointerCapture(e.pointerId);
       const p = pos(e);
       pointers.set(e.pointerId, p);
@@ -1071,8 +1175,11 @@
         hover = null;
         return;
       }
+      const car = e.pointerType === 'mouse' ? carAt(p) : null;
+      if (car) { if (!car.label) car.label = journey(car); infoTip({ title: car.label[0], line: car.label[1], color: car.c, x: p.x, y: p.y }); canvas.style.cursor = 'default'; hover = null; return; }
+      const tl = tileAt(p.x, p.y), place = placeAt(tl.x, tl.y);
+      if (place && e.pointerType === 'mouse') { infoTip({ title: place.name, line: place.about, hint: place.hint, color: place.color, x: p.x, y: p.y }); hover = place.f || null; canvas.style.cursor = place.link ? 'pointer' : 'grab'; return; }
       hideTip();
-      const tl = tileAt(p.x, p.y);
       hover = shipAt(p) || featureAt(tl.x, tl.y);
       canvas.style.cursor = hover ? 'pointer' : 'grab';
     });
@@ -1101,6 +1208,14 @@
       cam.x = before.x - (pxX - cw / 2) / cam.z; cam.y = before.y - (pxY - ch / 2) / cam.z; clampCam();
     }
     function select(p) {
+      // a building with a page of its own: go there (on touch, the first tap names it, the second goes)
+      { const tl = tileAt(p.x, p.y), place = placeAt(tl.x, tl.y);
+        if (place && place.link && !personAt(p)) {
+          if (hoverInfo && hoverInfo.title === place.name) { const href = placeHref(place); if (href.indexOf('#') === 0) location.hash = href; else location.href = href; return; }
+          infoTip({ title: place.name, line: place.about, hint: 'Tap again to visit', color: place.color, x: p.x, y: p.y });
+          if (hoverInfo) { const href = placeHref(place); if (lastPointerMouse) { if (href.indexOf('#') === 0) location.hash = href; else location.href = href; return; } }
+          return;
+        } }
       // on touch, a tap near a resident shows who they are; a second tap opens their file
       const person = personAt(p);
       if (person) {
