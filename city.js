@@ -123,6 +123,10 @@
         if (f.type === 'radio') return '<p class="lede" style="font-size:1rem">Home of Pixel FM, 88.8. Music for pixels, and anyone near one, around the clock.</p>' + cta(f.link, 'Listen live');
         if (f.type === 'observatory') return '<p class="lede" style="font-size:1rem">From up here you can see the whole Pixel Universe at once: the race, the city, the Senate, the weather and the news.</p>' + cta(f.link, 'Look through the telescope');
         if (C.isPlanned ? C.isPlanned(f, t) : f.planned) return '<p class="lede" style="font-size:1rem">' + esc(f.name) + ' is coming soon. The ground has been cleared and the fence is up.</p>';
+        if (f.type === 'jobs') {
+          const L = window.PixelUniverse.labour, lm = L && L.ready() && t >= L.start ? L.labourAt(t) : null;
+          return '<p class="lede" style="font-size:1rem">Where Pixel City looks for work. ' + (lm ? lm.looking.toLocaleString() + ' pixels are looking for work, and ' + lm.vacancies.length.toLocaleString() + ' employers are hiring. Unemployment: ' + lm.rate + '%.' : '') + '</p>' + cta(f.link, 'Visit the Job Centre');
+        }
         if (f.type === 'school') {
           const sc = window.PixelUniverse.school, ss = sc && sc.ready() ? sc.stateAt(t) : null;
           return '<p class="lede" style="font-size:1rem">The city’s secondary school. ' + (ss && ss.started ? ss.roll.toLocaleString() + ' students in Years 9 to 13. ' + (ss.closed ? 'Closed today for the storm.' : ss.inSession ? 'Lessons are on.' : ss.term ? 'No lessons right now.' : 'The school is on holiday.') : 'Every resident in Years 9 to 13 is enrolled.') + '</p>' + cta(f.link, 'Visit Pixel High');

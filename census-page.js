@@ -89,6 +89,13 @@
     });
     h += '<h2>The districts</h2><div class="table-wrap"><table class="data"><thead><tr><th>District</th><th class="n">Residents</th><th class="n">Homes</th><th class="n">Median age</th><th class="n">Under 18</th><th class="n">65 and over</th><th class="n">Happiness</th><th>Top complaint</th></tr></thead><tbody>' + rows.join('') + '</tbody></table></div>';
 
+    // the life cycle: the newest pixels, and those who have gone dark
+    if (t >= K.lifeStart) {
+      const life = K.recentLife(t, 14);
+      const row = (id, verb) => { const x = K.person(id, t); return '<li>' + link('resident/' + id, esc(x.name)) + ' ' + verb + '<small class="muted">' + esc(x.districtName) + ', ' + fShort.format(verb === 'went dark' ? x.dark : x.birth) + (verb === 'went dark' ? ', aged ' + Math.floor((x.dark - x.birth) / 31557600000) : '') + '</small></li>'; };
+      h += '<div class="two-col"><div><h2>New pixels</h2><p class="hint">Lit in the last two weeks: ' + life.lit.length + '.</p><ul class="list-plain">' + (life.lit.slice(0, 8).map((id) => row(id, 'was lit')).join('') || '<li class="muted">None in the last fortnight.</li>') + '</ul></div>' +
+        '<div><h2>Gone dark</h2><p class="hint">In the last two weeks: ' + life.dark.length + '.</p><ul class="list-plain">' + (life.dark.slice(0, 8).map((id) => row(id, 'went dark')).join('') || '<li class="muted">Nobody, this fortnight.</li>') + '</ul></div></div>';
+    }
     // ages
     const max = Math.max.apply(null, st.ageBands);
     h += '<div class="two-col"><div><h2>Ages</h2><p class="hint">Median age ' + st.medianAge + '. The oldest resident is ' + st.oldest + '.</p><div class="ages" role="img" aria-label="Residents by age, in decades">' +
@@ -118,10 +125,12 @@
     if (!p) return head('No such resident', 'The Census Office has no file under that number. ' + link('', 'Back to the census') + '.');
     document.title = p.name + ' – Census – Pixel City';
     let h = profileHead(p);
-    if (!p.born) h += '<p class="banner">Not yet born.</p>';
+    if (!p.born) h += '<p class="banner">Not yet lit.</p>';
+    else if (p.goneDark) h += '<p class="banner">' + esc(p.name) + ' went dark on ' + fYear.format(p.dark) + ', aged ' + Math.floor((p.dark - p.birth) / 31557600000) + '. The Census Office keeps the file.</p>';
     else if (!p.present) h += '<p class="banner">' + esc(p.name) + ' and their household left Pixel City on ' + fYear.format(p.movesOut) + '. The Census Office keeps the file.</p>';
+    if (p.expecting && p.present) h += '<p class="banner">The household is expecting a new pixel.</p>';
     h += '<dl class="facts">' + fact('Age', p.age) + fact('Birthday', esc(p.birthday)) + fact('Address', esc(p.address)) +
-      fact('Living here since', p.sinceFounding ? 'The city’s founding' : fYear.format(p.movedIn)) + fact('Household', HOUSEHOLD[p.householdKind]) + fact('Stage of life', esc(p.stage)) + '</dl>';
+      fact(p.lit ? 'Lit on' : 'Living here since', p.lit ? fYear.format(p.birth) : p.sinceFounding ? 'The city’s founding' : fYear.format(p.movedIn)) + fact('Household', HOUSEHOLD[p.householdKind]) + fact('Stage of life', esc(p.stage)) + '</dl>';
     h += '<div class="profile-grid"><div><h2>Character</h2><dl>' + K.TRAITS.map(([k, label, lo, hi]) => '<div class="trait"><dt>' + label + '</dt><dd><span class="bar" style="--v:' + p.traits[k] + ';--c:' + p.color + '"></span></dd></div>' +
       '<p class="axis-labels"><span>' + lo + '</span><span>' + hi + '</span></p>').join('') + '</dl>' +
       '<h2>Hopes and habits</h2><dl class="facts" style="grid-template-columns:1fr">' + fact('Hopes', esc(p.hope)) + fact('Dream job', esc(p.dreamJob.charAt(0).toUpperCase() + p.dreamJob.slice(1))) +
@@ -133,7 +142,12 @@
         fact('Happiness', Math.round(o.happiness * 100) + '%') + fact('Worried about', o.concerns.length ? esc(o.concerns.map((c, i) => (i ? K.CONCERNS[c].toLowerCase() : K.CONCERNS[c])).join(', ')) : 'Nothing much') +
         (o.lean ? fact('Leans', '<span class="px"><span class="chip" style="--c:' + PARTY[o.lean][1] + '"></span>' + PARTY[o.lean][0] + '</span>') : fact('Leans', '<span class="muted">Too young to vote</span>')) + '</dl>';
     } else if (p.present) h += '<h2>What ' + esc(p.first) + ' thinks</h2><p class="muted">Too young to be asked.</p>';
-    h += '<h2>Household</h2><ul class="list-plain">' + p.householdMembers.filter((m) => m.born).map((m) => '<li><span class="chip" style="--c:' + m.color + '"></span>' + (m.id === p.id ? '<b>' + esc(m.name) + '</b>' : link('resident/' + m.id, esc(m.name))) + '<small class="muted">' + ROLE[m.role] + ', ' + m.age + '</small></li>').join('') + '</ul>';
+    if (p.work) {
+      const w = p.work, JC = 'https://dvexperiments.github.io/JobCentre/' + AT + '#/worker/' + p.id;
+      const now = w.status === 'employed' ? 'Works as a ' + esc(w.title) + ' at ' + esc(w.employerName) + (w.dream ? ', their dream job' : '') : w.status === 'looking' ? 'Looking for work since ' + fYear.format(w.from) : w.status === 'retired' ? 'Retired' : esc(w.reason || 'Not working');
+      h += '<h2>Work</h2><p>' + now + '.' + (w.status === 'employed' ? ' ' + w.wage.toLocaleString('en') + ' W a week.' : '') + ' <a href="' + JC + '">Their Job Centre record</a></p>';
+    }
+    h += '<h2>Household</h2><ul class="list-plain">' + p.householdMembers.filter((m) => m.born).map((m) => '<li><span class="chip" style="--c:' + m.color + '"></span>' + (m.id === p.id ? '<b>' + esc(m.name) + '</b>' : link('resident/' + m.id, esc(m.name))) + '<small class="muted">' + ROLE[m.role] + ', ' + m.age + (m.goneDark ? ', gone dark' : m.lit ? ', lit in the new era' : '') + '</small></li>').join('') + '</ul>';
     h += '<p class="hint" style="margin-top:16px">' + link('district/' + p.district, 'More residents of ' + esc(p.districtName)) + '</p></div></div>';
     return h;
   }

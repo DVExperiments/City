@@ -311,6 +311,16 @@
             ['#E5484D', '#3FB566', '#3D7FE0', '#B9C3CA'].forEach((c, k) => { px(X + bw + 4, Y + 10 + k * 16, 1, 10, '#3B4045'); px(X + bw + 5, Y + 10 + k * 16, 5, 4, c); });
             break;
           }
+          case 'jobs': {
+            // the Job Centre: a plain office, a noticeboard of vacancy cards on the wall, and a rail for the queue
+            px(X, Y, W, HH, '#B9BEC2');
+            bevel(X + 3, Y + 3, W - 6, HH - 12, '#D2D6D0', 3);
+            px(X + 8, Y + 8, W - 16, 18, '#2A3139');
+            for (let r = 0; r < 3; r++) for (let c = 0; c < 8; c++) if (h32(r * 8 + c + 77) < 0.8) px(X + 10 + c * 6, Y + 10 + r * 5, 4, 3, pick(['#F2D024', '#F3F6F7', '#9BE22D', '#FF9F7A'], h32(r * 11 + c)));
+            for (let k = 0; k < W - 6; k += 4) px(X + 3 + k, Y + HH - 5, 2, 2, '#6E747A');
+            px(X + 3, Y + HH - 4, W - 6, 1, '#8A9096');
+            break;
+          }
           case 'gas':
             px(X, Y, W, HH, '#8D8F8A');
             disc(X + 14, Y + 20, 11, '#5E615C'); disc(X + 13, Y + 19, 10, '#D2D5D0');

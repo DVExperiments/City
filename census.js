@@ -20,7 +20,7 @@
   'use strict';
 
   const VERSION = '0.1.0';
-  const H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
+  const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const YEAR = 31557600000; // 365.25 days
   const EPOCH = Date.UTC(2025, 11, 3);
   const OPENS = Date.UTC(2026, 10, 2);       // the Census Office opens its doors (a Monday)
@@ -192,13 +192,123 @@
     return hh;
   }
   const ageAt = (birth, t) => Math.floor((t - birth) / YEAR);
-  const parseId = (id) => { const m = /^p(\d+)-(\d+)-(\d+)$/.exec(id); return m ? { hi: +m[1], k: +m[2], i: +m[3] } : null; };
+
+  // ================================================================ the Life Cycle
+  // From 00:00 on 1 December 2026, city time, pixels are lit (born) and go dark (die). Before then the census is
+  // exactly as it was. A pixel's lifespan is drawn once, from the chance of going dark at each age; a household's
+  // new pixels come from a monthly chance shaped by work, room at home, age, children, the air, parks and the season.
+  const LIFE_START = Date.UTC(2026, 10, 30, 12); // city midnight, 1 December 2026
+  const MONTH = YEAR / 12;
+  const GESTATION = 280 * DAY;
+  // the chance of going dark within a year, by age
+  const Q = [];
+  for (let a = 0; a <= 115; a++) Q.push(a < 1 ? 0.004 : a < 15 ? 0.0002 : a < 25 ? 0.0005 : a < 35 ? 0.0008 : a < 45 ? 0.0015 : a < 55 ? 0.003 : a < 65 ? 0.007 : a < 75 ? 0.018 : a < 85 ? 0.05 : a < 95 ? 0.14 : a < 105 ? 0.32 : 0.6);
+  const darkCache = new Map();
+  /** When a pixel goes dark: a moment after the Life Cycle begins, drawn from their age then. */
+  function darkAt(id, birth) {
+    if (darkCache.has(id)) return darkCache.get(id);
+    const from = birth > LIFE_START ? birth : LIFE_START;
+    const a0 = Math.floor((from - birth) / YEAR);
+    const u = seeded('dark:' + id)(), f = seeded('dark-day:' + id)();
+    let s = 1, x = a0;
+    while (x < 115) { s *= 1 - Q[x]; if (s < u) break; x++; }
+    const when = from + Math.floor((x - a0 + f) * YEAR);
+    if (darkCache.size > 200000) darkCache.clear();
+    darkCache.set(id, when);
+    return when;
+  }
+  const alive = (m, t) => t >= m.birth && t < darkAt(m.id, m.birth);
+
+  // what the city was like, month by month, for the decision to light a new pixel
+  const monthCache = new Map();
+  function monthConditions(n) {
+    if (monthCache.has(n)) return monthCache.get(n);
+    const t = LIFE_START + Math.floor(n * MONTH);
+    const out = { aqi: 60, parks: null };
+    try {
+      const st = C().stateAt(t - DAY), map = renewedMap();
+      out.aqi = st.aqi;
+      out.parks = map.districts.map(() => 0);
+      for (const x of st.sites || []) if (x.type === 'park' && x.state === 'operating') out.parks[map.features[x.id].district]++;
+    } catch (e) { /* neutral conditions */ }
+    monthCache.set(n, out);
+    return out;
+  }
+  const litCache = new Map();
+  /** The pixels lit into household (hi, k), up to time t: [{ id, birth, conceived, role, surname }] */
+  function litUntil(hi, k, t) {
+    const key = hi + ':' + k;
+    let rec = litCache.get(key);
+    const hh = household(hi, k);
+    if (!rec) { rec = { n: null, list: [], expecting: null }; litCache.set(key, rec); if (litCache.size > 60000) { litCache.clear(); litCache.set(key, rec); } }
+    const adults = hh.members.filter((m) => m.role === 'adult');
+    if (adults.length !== 2) return rec.list;
+    const first = Math.ceil(((hh.start > LIFE_START - GESTATION ? hh.start : LIFE_START - GESTATION) - LIFE_START) / MONTH);
+    if (rec.n === null) rec.n = first;
+    const home = HOMES[hi];
+    while (true) {
+      const mt = LIFE_START + Math.floor(rec.n * MONTH);
+      if (mt > t || mt >= hh.end) break;
+      const n = rec.n++;
+      if (rec.expecting && mt < rec.expecting) continue;
+      if (!adults.every((a) => alive(a, mt))) continue;
+      const u = seeded('lit:' + key + ':' + n)();
+      if (u >= 0.07) continue; // the most any month can offer; most months are decided here
+      const younger = Math.min(ageAt(adults[0].birth, mt), ageAt(adults[1].birth, mt));
+      if (younger < 18 || younger > 44) continue;
+      const kids = hh.members.filter((m) => m.role === 'child' && alive(m, mt) && ageAt(m.birth, mt) < 18).length + rec.list.filter((b) => alive(b, mt)).length;
+      if (kids >= 3) continue;
+      const size = hh.members.filter((m) => alive(m, mt)).length + rec.list.filter((b) => alive(b, mt)).length;
+      const room = size < home.size ? 1 : size === home.size ? 0.45 : size === home.size + 1 ? 0.12 : 0;
+      const age = younger < 22 ? 0.6 : younger < 30 ? 1 : younger < 35 ? 0.85 : younger < 40 ? 0.55 : 0.2;
+      const kidsF = kids === 0 ? 1 : kids === 1 ? 0.75 : 0.4;
+      let work = 0.85; // before the Job Centre's records begin
+      if (mt >= LIFE_START) { const w = adults.filter((a) => careerAt(a.id, a.birth, home.district, mt).status === 'employed').length; work = w === 2 ? 1 : w === 1 ? 0.8 : 0.45; }
+      const cond = n >= 0 ? monthConditions(n) : { aqi: 60, parks: null };
+      const air = cond.aqi > 150 ? 0.8 : cond.aqi > 100 ? 0.92 : 1;
+      const green = cond.parks && cond.parks[home.district] > 0 ? 1.08 : 1;
+      const mon = new Date(mt + 12 * H).getUTCMonth();
+      const season = mon >= 8 || mon <= 1 ? 1.08 : 0.95;
+      const p = 0.052 * room * age * kidsF * work * air * green * season;
+      if (u >= p) continue;
+      const conceived = mt + Math.floor(seeded('lit-day:' + key + ':' + n)() * 28) * DAY;
+      const birth = conceived + GESTATION + Math.floor((seeded('lit-due:' + key + ':' + n)() - 0.5) * 20) * DAY;
+      if (birth >= hh.end) break; // they will have moved away by then
+      rec.list.push({ id: 'p' + hi + '-' + k + '-b' + rec.list.length, birth, conceived, role: 'child', surname: hh.surname });
+      rec.expecting = birth + 90 * DAY; // a little while before the next
+    }
+    return rec.list;
+  }
+  /** All pixels lit into a household, as far as has been worked out: for looking up a lit pixel by id. */
+  const litIn = (hi, k) => (litCache.get(hi + ':' + k) || { list: [] }).list;
+  /** Who lives in household (hi, k) at time t: the household as it arrived, less those gone dark, plus those lit since. */
+  function membersAt(hi, k, t) {
+    const hh = household(hi, k);
+    if (t < LIFE_START) return hh.members;
+    const out = hh.members.filter((m) => t < darkAt(m.id, m.birth));
+    for (const b of litUntil(hi, k, t)) if (t >= b.birth && t < darkAt(b.id, b.birth)) out.push(b);
+    return out;
+  }
+
+  const parseId = (id) => {
+    let m = /^p(\d+)-(\d+)-(\d+)$/.exec(id);
+    if (m) return { hi: +m[1], k: +m[2], i: +m[3] };
+    m = /^p(\d+)-(\d+)-b(\d+)$/.exec(id); // a pixel lit in the Life Cycle era
+    return m ? { hi: +m[1], k: +m[2], b: +m[3] } : null;
+  };
+  function memberOf(p) {
+    if (p.b === undefined) return household(p.hi, p.k).members[p.i];
+    // a lit pixel: work out the household's new pixels just far enough to find this one
+    const hh = household(p.hi, p.k);
+    for (let t = LIFE_START + YEAR; !litIn(p.hi, p.k)[p.b] && t < hh.end + YEAR; t += YEAR) litUntil(p.hi, p.k, t);
+    return litIn(p.hi, p.k)[p.b];
+  }
 
   /** A resident's identity and character: everything that does not change with the city. */
   function character(id) {
     const p = parseId(id);
     if (!p || !homes()[p.hi]) return null;
-    const hh = household(p.hi, p.k), mem = hh.members[p.i];
+    const hh = household(p.hi, p.k), mem = memberOf(p);
     if (!mem) return null;
     const home = HOMES[p.hi];
     const r = seeded('character:' + id);
@@ -213,7 +323,7 @@
       id, first: pick(r, FIRST), surname: mem.surname, name: '', color: colorFor(r), role: mem.role, birth: mem.birth,
       birthday: new Date(mem.birth).getUTCDate() + ' ' + ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][new Date(mem.birth).getUTCMonth()],
       home: home.i, address: home.address, district: home.district, districtName: renewedMap().districts[home.district].name, homeKind: home.kind,
-      movedIn: hh.start, movesOut: hh.end, household: hh.members.map((m) => m.id), householdKind: hh.kind,
+      movedIn: p.b !== undefined ? mem.birth : hh.start, movesOut: hh.end, household: hh.members.map((m) => m.id), householdKind: hh.kind, lit: p.b !== undefined,
       traits, favourite: fav[0], favouriteName: fav[1], hobbies: [h1, h2], hope: pick(r, HOPES), dreamJob: pick(r, JOBS), quirk: pick(r, QUIRKS), leanNoise
     };
   }
@@ -299,10 +409,230 @@
     return line;
   }
 
+
+  // ================================================================ working lives (the Job Centre's records)
+  // Every resident aged 18 to 66 has a career on the city's clock, from the Life Cycle's start: spells of a few years
+  // with one employer, sometimes a spell looking for work, sometimes a spell out of the workforce. Employers are the
+  // city's shops, offices, factories, warehouses and docks, its institutions, and its power stations and parks. When a
+  // site closes, its staff are laid off and look for work. How hard it is to find work depends on how many jobs there
+  // are for the city's workforce.
+  const JOB_CENTRE_OPENS = Date.UTC(2026, 11, 6, 20, 30); // 8:30am, Monday 7 December, city time
+  const SECTOR = {
+    office: { label: 'Offices', wage: 640, titles: ['body text hue controller', 'kerning inspector', 'senior gradient technician', 'subpixel alignment officer', 'refresh rate auditor', 'colour temperature adjuster', 'anti-glare consultant', 'shade allocator', 'font licensing clerk', 'accounts clerk (watts)'] },
+    shop: { label: 'Shops', wage: 430, titles: ['shop assistant', 'cashier', 'window dresser', 'barista', 'florist', 'shelf stacker'] },
+    factory: { label: 'Factories', wage: 540, titles: ['diode assembler', 'phosphor mixer', 'line supervisor', 'brightness quality inspector', 'machine minder'] },
+    warehouse: { label: 'Warehouses', wage: 480, titles: ['stock picker', 'dispatch clerk', 'forklift driver', 'night watch'] },
+    port: { label: 'The port', wage: 580, titles: ['stevedore', 'crane operator', 'harbour pilot', 'line handler'] },
+    energy: { label: 'Power', wage: 660, titles: ['coal plant stoker', 'boiler engineer', 'control room operator', 'solar panel polisher', 'turbine climber', 'inverter technician'] },
+    parks: { label: 'Parks and wildlife', wage: 470, titles: ['park keeper', 'gardener', 'ranger'] },
+    building: { label: 'Construction', wage: 560, titles: ['construction worker', 'site foreman', 'crane operator'] },
+    public: { label: 'Public institutions', wage: 600, titles: ['clerk'] },
+    school: { label: 'Education', wage: 620, titles: ['teacher'] }
+  };
+  const INSTITUTIONS = {
+    senate: [30, ['Senate stenographer', 'clerk of the chamber', 'usher', 'Hansard reporter']],
+    stadium: [70, ['stadium groundskeeper', 'race steward', 'floodlight technician', 'race commentator', 'ticket seller']],
+    bureau: [35, ['forecaster', 'weather balloon handler', 'climate data clerk']],
+    bookmaker: [20, ['bookmaker', 'odds compiler', 'cashier']],
+    press: [55, ['reporter', 'sub-editor', 'newsprint folder', 'printer']],
+    museum: [25, ['museum conservator', 'gallery guide', 'archivist']],
+    census: [35, ['census enumerator', 'records clerk', 'statistician']],
+    radio: [18, ['radio presenter', 'producer', 'sound engineer']],
+    observatory: [12, ['astronomer', 'telescope polisher']],
+    jobs: [25, ['job coach', 'case officer']],
+    school: [265, ['teacher']],
+    port: [60, ['harbour master', 'port clerk', 'customs officer']],
+    gas: [20, ['gas plant operator']]
+  };
+  const SITE_JOBS = { coal: 110, solar: 12, wind: 10, park: 4, wildlife: 3 };
+  const BIZ_A = ['Halftone', 'Gridley', 'Kerning', 'Lumen', 'Raster', 'Gamut', 'Pica', 'Serif', 'Vector', 'Glyph', 'Phosphor', 'Contrast', 'Aperture', 'Prism', 'Bitwell', 'Dotson', 'Inkwell', 'Scanlon'];
+  const BIZ_B = { office: ['Typesetting', 'Colour Consultants', 'Gradient Partners', 'Alignment Bureau', 'Refresh Services', 'Font Licensing', '& Associates', 'Brightness Advisory'],
+    shop: ['Pixel Pantry', 'Corner Store', 'Florist', 'Coffee', 'Hardware', 'Bakery', 'News & Sweets'], factory: ['Diode Works', 'Phosphor Mills', 'Screen Works', 'Glass & Light'],
+    warehouse: ['Storage', 'Freight', 'Distribution'], port: ['Stevedores'] };
+
+  let EMP = null;
+  function employers() {
+    if (EMP) return EMP;
+    const C0 = C(), m = renewedMap(), T = C0.T, JOBS = C0.JOBS;
+    const kindOf = { [T.OFFICE]: 'office', [T.SHOP]: 'shop', [T.FACTORY]: 'factory', [T.WAREHOUSE]: 'warehouse', [T.DOCK]: 'port' };
+    EMP = [];
+    for (let i = 0; i < m.tiles.length; i++) {
+      const kind = kindOf[m.tiles[i]], d = m.district[i];
+      if (!kind || d < 0 || m.owner[i] >= 0) continue;
+      const r = seeded('employer:' + i), x = i % m.W, y = Math.floor(i / m.W);
+      EMP.push({ id: 'b' + i, kind: 'business', sector: kind, district: d, x, y, capacity: JOBS[m.tiles[i]],
+        name: kind === 'shop' ? pick(r, FIRST) + '’s ' + pick(r, BIZ_B.shop) : pick(r, BIZ_A) + ' ' + pick(r, BIZ_B[kind]), titles: SECTOR[kind].titles });
+    }
+    for (const f of m.features) {
+      if (f.kind === 'landmark' && INSTITUTIONS[f.type]) {
+        const [cap, titles] = INSTITUTIONS[f.type];
+        EMP.push({ id: 'i' + f.id, kind: 'institution', sector: f.type === 'school' ? 'school' : f.type === 'port' ? 'port' : f.type === 'gas' ? 'energy' : 'public', district: f.district, x: f.x, y: f.y, capacity: cap, name: f.name, titles, feature: f });
+      } else if (f.kind === 'site') {
+        EMP.push({ id: 's' + f.id, kind: 'site', sector: f.type === 'park' || f.type === 'wildlife' ? 'parks' : 'energy', district: f.district, x: f.x, y: f.y, capacity: SITE_JOBS[f.type], name: f.name, titles: SECTOR[f.type === 'park' || f.type === 'wildlife' ? 'parks' : 'energy'].titles.filter((t) => f.type === 'coal' ? /coal|boiler|control/.test(t) : f.type === 'solar' ? /solar|inverter/.test(t) : f.type === 'wind' ? /turbine/.test(t) : true), feature: f });
+        EMP.push({ id: 'c' + f.id, kind: 'construction', sector: 'building', district: f.district, x: f.x, y: f.y, capacity: 35, name: 'Construction of ' + f.name, titles: SECTOR.building.titles, feature: f });
+      }
+    }
+    EMP.byId = {};
+    for (const e of EMP) EMP.byId[e.id] = e;
+    return EMP;
+  }
+  function operating(e, t) {
+    if (e.kind === 'business') return true;
+    const C0 = C();
+    if (e.kind === 'institution') { if (e.feature.type === 'jobs' && t < JOB_CENTRE_OPENS) return false; return !(C0.isPlanned && C0.isPlanned(e.feature, t)); }
+    const st = C0.siteStateAt(e.feature.id, t).state;
+    return e.kind === 'site' ? st === 'operating' : st === 'building';
+  }
+  // the employers open in a given month, as cumulative capacity, city-wide and by district, for choosing among them
+  const openCache = new Map();
+  function openIn(n) {
+    if (openCache.has(n)) return openCache.get(n);
+    const t = LIFE_START + Math.floor(n * MONTH) + DAY;
+    const all = { list: [], cum: [], total: 0 }, by = renewedMap().districts.map(() => ({ list: [], cum: [], total: 0 }));
+    for (const e of employers()) {
+      if (!operating(e, t)) continue;
+      for (const bucket of [all, by[e.district]]) { bucket.total += e.capacity; bucket.list.push(e); bucket.cum.push(bucket.total); }
+    }
+    const out = { all, by, jobs: all.total };
+    if (openCache.size > 120) openCache.clear();
+    openCache.set(n, out);
+    return out;
+  }
+  const choose = (bucket, u) => { const v = u * bucket.total; let lo = 0, hi = bucket.list.length - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (bucket.cum[mid] > v) hi = mid; else lo = mid + 1; } return bucket.list[lo]; };
+  // the city's workforce, counted once when the records begin
+  let WORKFORCE = null;
+  function workforce() {
+    if (WORKFORCE !== null) return WORKFORCE;
+    // adults only, so the households as they arrived will do: new pixels are years from working age, and counting them
+    // here would ask whether their parents work, which needs this very number
+    let n = 0;
+    for (const h of homes()) for (const m of household(h.i, tenancyAt(h.i, LIFE_START).k).members) { const a = ageAt(m.birth, LIFE_START); if (a >= 18 && a <= 66) n += a < 22 ? 0.5 : a < 60 ? 0.87 : 0.6; }
+    WORKFORCE = n;
+    return n;
+  }
+  const monthIndex = (t) => Math.floor((t - LIFE_START) / MONTH);
+  const careerCache = new Map(), dreamOf = new Map();
+  const dream = (id) => { if (!dreamOf.has(id)) { const c = character(id); dreamOf.set(id, c ? c.dreamJob : null); if (dreamOf.size > 150000) dreamOf.clear(); } return dreamOf.get(id); };
+  /**
+   * A resident's working life up to time t: spells of { from, to, status, employer, title, wage, reason }.
+   * status: 'employed', 'looking' (for work), 'away' (out of the workforce), 'retired', 'young'.
+   * A job at a power station or a building site is checked for a closure only up to t, never beyond: the future
+   * of the city isn't known yet. The check resumes when a later moment is asked about.
+   */
+  function careerUntil(id, birth, district, t) {
+    let c = careerCache.get(id);
+    if (!c) {
+      c = { spells: [], next: null, k: 0 };
+      const r = seeded('career0:' + id);
+      const len0 = Math.floor((1 + r() * r() * 6) * YEAR);
+      c.next = LIFE_START - Math.floor(r() * len0); // already some way into their first spell
+      careerCache.set(id, c);
+      if (careerCache.size > 120000) { careerCache.clear(); careerCache.set(id, c); }
+    }
+    const retireAt = birth + 67 * YEAR;
+    while (true) {
+      // finish checking an open job at a site, as far as t
+      const last = c.spells[c.spells.length - 1];
+      if (last && last.pending) {
+        const e = employers().byId[last.employer], upTo = Math.min(last.planned, t);
+        let x = last.checked;
+        for (; x + 7 * DAY <= upTo; x += 7 * DAY) if (!operating(e, x + 7 * DAY)) break;
+        if (x + 7 * DAY <= upTo) {
+          // closed this week: find the day
+          let y = x; while (y < x + 7 * DAY && operating(e, y + DAY)) y += DAY;
+          last.to = y + DAY; last.reason = e.kind === 'site' ? 'Laid off when ' + e.name + ' closed' : 'The building was finished';
+          delete last.pending;
+          const r = seeded('laidoff:' + id + ':' + c.k);
+          const look = Math.floor((2 + r() * 6) * MONTH);
+          c.spells.push({ from: last.to, to: last.to + look, status: 'looking', reason: 'Laid off' });
+          c.next = last.to + look;
+        } else if (last.planned <= t) { delete last.pending; c.next = last.planned; }
+        else { last.checked = x; return c.spells; } // still open: we can't know more until t moves on
+      }
+      if (c.next > t || c.k >= 200) break;
+      const S = c.next, k = c.k++;
+      const r = seeded('career:' + id + ':' + k);
+      const age = (S - birth) / YEAR;
+      if (S >= retireAt) { c.spells.push({ from: S, to: Infinity, status: 'retired' }); c.next = Infinity; break; }
+      if (age < 18) { c.spells.push({ from: S, to: birth + 18 * YEAR, status: 'young' }); c.next = birth + 18 * YEAR; continue; }
+      const len = Math.floor((1 + r() * r() * 6) * YEAR);
+      const part = age < 22 ? 0.5 : age < 60 ? 0.87 : 0.6;
+      if (r() >= part) {
+        const why = age < 22 ? 'Studying' : age >= 60 ? 'Retired early' : r() < 0.5 ? 'Keeping house' : 'Caring for family';
+        const end = Math.min(S + Math.floor(len * 0.6), retireAt);
+        if (why === 'Retired early') { c.spells.push({ from: S, to: Infinity, status: 'retired', reason: why }); c.next = Infinity; break; }
+        c.spells.push({ from: S, to: end, status: 'away', reason: why });
+        c.next = end;
+        continue;
+      }
+      const open = openIn(monthIndex(S > LIFE_START ? S : LIFE_START));
+      const scarce = 1 - open.jobs / (workforce() * 1.02);
+      if (r() < (scarce > 0.03 ? scarce : 0.03)) {
+        const end = S + Math.floor((1 + r() * 6) * MONTH * (scarce > 0.15 ? 1.6 : 1));
+        c.spells.push({ from: S, to: end, status: 'looking', reason: 'Between jobs' });
+        c.next = end;
+        continue;
+      }
+      const local = open.by[district];
+      const e = local.total && r() < 0.6 ? choose(local, r()) : choose(open.all, r());
+      const want = dream(id);
+      const title = e.titles.indexOf(want) >= 0 && r() < 0.5 ? want : pick(r, e.titles);
+      const wage = Math.round(SECTOR[e.sector].wage * (0.85 + r() * 0.3) * (1 + Math.min(0.4, (age - 22) * 0.01)) / 10) * 10;
+      const planned = Math.min(S + len, retireAt);
+      const spell = { from: S, to: planned, status: 'employed', employer: e.id, title, wage, dream: title === want };
+      c.spells.push(spell);
+      if (e.kind === 'site' || e.kind === 'construction') { spell.pending = true; spell.planned = planned; spell.checked = S > LIFE_START ? S : LIFE_START; c.next = Infinity; continue; }
+      c.next = planned;
+    }
+    return c.spells;
+  }
+  /** What a resident is doing for a living at time t. */
+  function careerAt(id, birth, district, t) {
+    if (t < LIFE_START) return { status: 'unknown' };
+    const age = ageAt(birth, t);
+    if (age < 18) return { status: 'young' };
+    for (const sp of careerUntil(id, birth, district, t)) if (t >= sp.from && t < sp.to) return Object.assign({}, sp, sp.employer ? { employerName: employers().byId[sp.employer].name, sector: employers().byId[sp.employer].sector } : {});
+    return { status: age >= 67 ? 'retired' : 'looking' };
+  }
+  function jobOf(id, t) {
+    const c = character(id);
+    if (!c) return null;
+    return careerAt(id, c.birth, c.district, t);
+  }
+  const labourCache = new Map();
+  /** The labour market at time t: totals, by sector and district, employers' headcounts, vacancies and the queue. */
+  function labourAt(t) {
+    if (t < LIFE_START) return null;
+    const d = Math.floor((t - LIFE_START) / DAY);
+    if (labourCache.has(d)) return labourCache.get(d);
+    const map = renewedMap();
+    const out = { employed: 0, looking: 0, away: 0, retired: 0, dream: 0, bySector: {}, byDistrict: map.districts.map((x) => ({ id: x.id, name: x.name, employed: 0, looking: 0 })), head: {}, queue: [] };
+    for (const h of homes()) for (const m of residentsOfHome(h.i, t).members) {
+      if (ageAt(m.birth, t) < 18) continue;
+      const j = careerAt(m.id, m.birth, h.district, t);
+      if (j.status === 'employed') {
+        out.employed++; out.head[j.employer] = (out.head[j.employer] || 0) + 1;
+        out.bySector[j.sector] = (out.bySector[j.sector] || 0) + 1; out.byDistrict[h.district].employed++;
+        if (j.dream) out.dream++;
+      } else if (j.status === 'looking') { out.looking++; out.byDistrict[h.district].looking++; out.queue.push({ id: m.id, since: j.from, reason: j.reason }); }
+      else if (j.status === 'retired') out.retired++; else out.away++;
+    }
+    out.rate = out.employed + out.looking ? Math.round(out.looking / (out.employed + out.looking) * 1000) / 10 : 0;
+    out.queue.sort((a, b) => a.since - b.since);
+    const open = openIn(monthIndex(t));
+    out.jobs = open.jobs;
+    out.vacancies = open.all.list.filter((e) => operating(e, t)).map((e) => ({ id: e.id, name: e.name, sector: e.sector, district: e.district, capacity: e.capacity, staff: out.head[e.id] || 0 }))
+      .filter((v) => v.capacity - v.staff >= (v.capacity >= 20 ? 3 : 1)).map((v) => Object.assign(v, { open: v.capacity - v.staff }))
+      .sort((a, b) => b.open - a.open);
+    if (labourCache.size > 8) labourCache.clear();
+    labourCache.set(d, out);
+    return out;
+  }
+
   // ================================================================ people at a moment
   function residentsOfHome(hi, t) {
-    const ten = tenancyAt(hi, t);
-    return household(hi, ten.k);
+    const ten = tenancyAt(hi, t), hh = household(hi, ten.k);
+    return t < LIFE_START ? hh : Object.assign({}, hh, { members: membersAt(hi, ten.k, t) });
   }
   /** A full profile at time t. Residents who have moved away are still on file, marked as gone. */
   function person(id, t) {
@@ -310,10 +640,23 @@
     if (!c) return null;
     named(c);
     c.age = ageAt(c.birth, t);
-    c.present = t >= c.movedIn && t < c.movesOut && t >= c.birth;
+    c.dark = darkAt(c.id, c.birth);
+    c.goneDark = t >= LIFE_START && t >= c.dark;
+    c.present = t >= c.movedIn && t < c.movesOut && t >= c.birth && !c.goneDark;
     c.born = t >= c.birth;
+    const pid = parseId(id), hhNow = household(pid.hi, pid.k);
+    if (t >= LIFE_START) {
+      const now = membersAt(pid.hi, pid.k, Math.min(t, hhNow.end - 1));
+      c.household = hhNow.members.map((m) => m.id).concat(litIn(pid.hi, pid.k).filter((b) => b.birth <= t).map((b) => b.id));
+      c.expecting = litUntil(pid.hi, pid.k, t).some((b) => b.conceived <= t && t < b.birth);
+      c.livingWith = now.map((m) => m.id);
+    }
+    if (c.present && ageAt(c.birth, t) >= 18 && t >= LIFE_START) {
+      c.work = careerAt(c.id, c.birth, c.district, t);
+      c.career = careerUntil(c.id, c.birth, c.district, t).filter((sp) => sp.from <= t && sp.status !== 'young').map((sp) => Object.assign({}, sp, sp.employer ? { employerName: employers().byId[sp.employer].name } : {}));
+    }
     c.stage = c.age < 5 ? 'Too young for school' : c.age < 13 ? 'At primary school' : c.age < 18 ? 'Old enough for Pixel High' : c.age < 22 ? 'Old enough for university' : c.age < 67 ? 'Of working age' : 'Retired';
-    c.householdMembers = c.household.map((mid) => { const m = named(character(mid)); return { id: mid, name: m.name, role: m.role, age: ageAt(m.birth, t), color: m.color, born: t >= m.birth }; });
+    c.householdMembers = c.household.map((mid) => { const m = named(character(mid)); const gone = t >= LIFE_START && t >= darkAt(mid, m.birth); return { id: mid, name: m.name, role: m.role, age: ageAt(m.birth, gone ? darkAt(mid, m.birth) : t), color: m.color, born: t >= m.birth, goneDark: gone, lit: m.lit }; });
     c.sinceFounding = c.movedIn <= EPOCH;
     if (c.present && c.age >= 12) c.thinks = opinions(c, t);
     return c;
@@ -491,12 +834,82 @@
       out.push({ id: 'census:moves:' + ymd(+d), time: iso(at), source: 'census', type: 'census.moves', importance: 1, data: { households: list.length },
         headline: (list.length < WORDS.length ? WORDS[list.length] : String(list.length)) + ' household' + (list.length === 1 ? '' : 's') + ' moved home today, among them the ' + first.surname + ' family, who replace the ' + was.surname + ' family in ' + dn + ' district' });
     }
+    for (const e of lifeEvents(lo, to)) out.push(e);
+    out.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
+    return out;
+  }
+
+  /** The day's pixels lit and gone dark, as one note each, at 9pm city time. */
+  function lifeEvents(from, to) {
+    const out = [];
+    const startDay = Math.max(LIFE_START, from - ((from - LIFE_START) % DAY + DAY) % DAY);
+    for (let d = startDay; d < to; d += DAY) {
+      const at = d + 21 * H;
+      if (at < from || at >= to || d < LIFE_START) continue;
+      const lit = [], dark = [];
+      for (const h of homes()) {
+        const k = tenancyAt(h.i, d + 12 * H).k, hh = household(h.i, k);
+        for (const b of litUntil(h.i, k, d + DAY)) if (b.birth >= d && b.birth < d + DAY) lit.push([b, h]);
+        for (const m of hh.members.concat(litIn(h.i, k))) { const x = darkAt(m.id, m.birth); if (x >= d && x < d + DAY && m.birth < x) dark.push([m, h]); }
+      }
+      const word = (n) => (n < WORDS.length ? WORDS[n] : String(n));
+      if (lit.length) {
+        const [b, h] = lit[0], c = named(character(b.id));
+        out.push({ id: 'census:lit:' + ymd(d + 12 * H), time: iso(at), source: 'census', type: 'life.lit', importance: 1, data: { count: lit.length },
+          headline: word(lit.length) + ' new pixel' + (lit.length === 1 ? ' was' : 's were') + ' lit in Pixel City today, among them ' + c.name + ', to the ' + c.surname + ' family of ' + c.districtName + ' district' });
+      }
+      if (dark.length) {
+        const [m, h] = dark.sort((a, b) => b[0].birth < a[0].birth ? 1 : -1)[0], c = named(character(m.id));
+        out.push({ id: 'census:dark:' + ymd(d + 12 * H), time: iso(at + MIN), source: 'census', type: 'life.dark', importance: 1, data: { count: dark.length },
+          headline: (dark.length === 1 ? c.name + ', ' + ageAt(m.birth, d) + ', of ' + c.districtName + ' district, went dark today. ' : word(dark.length) + ' residents went dark today, among them ' + c.name + ', ' + ageAt(m.birth, d) + ', of ' + c.districtName + '. ') +
+            'They were known for this: ' + c.quirk.charAt(0).toLowerCase() + c.quirk.slice(1) });
+      }
+    }
+    return out;
+  }
+
+  /** The Job Centre's news: its opening, layoffs when sites close, and a report on the first of each month. */
+  function labourEvents(from, to) {
+    const out = [];
+    if (to <= LIFE_START) return out;
+    const emit = (ms, type, importance, idPart, data, headline) => { if (ms >= from && ms < to) out.push({ id: 'jobs:' + idPart, time: iso(ms), source: 'jobs', type, importance, data, headline }); };
+    if (JOB_CENTRE_OPENS >= from && JOB_CENTRE_OPENS < to) { const L = labourAt(JOB_CENTRE_OPENS); emit(JOB_CENTRE_OPENS, 'jobs.opens', 3, 'opens', { queue: L.looking }, 'The Job Centre opens its doors, and ' + L.looking.toLocaleString('en') + ' pixels are already looking for work'); }
+    // the first of each month, 9am city time
+    for (let y = new Date(Math.max(from, LIFE_START) + 12 * H).getUTCFullYear(), mo = new Date(Math.max(from, LIFE_START) + 12 * H).getUTCMonth(); ; mo++) {
+      const at = Date.UTC(y, mo, 1, 9) - 12 * H;
+      if (at >= to) break;
+      if (at < from || at < LIFE_START) continue;
+      const L = labourAt(at), prev = at - 31 * DAY >= LIFE_START ? labourAt(at - 31 * DAY) : null;
+      const delta = prev ? Math.round((L.rate - prev.rate) * 10) / 10 : null;
+      emit(at, 'jobs.report', 2, 'report:' + ymd(at + 12 * H), { rate: L.rate, employed: L.employed, looking: L.looking },
+        'Unemployment in Pixel City ' + (delta === null ? 'stands at ' : delta > 0.05 ? 'rises to ' : delta < -0.05 ? 'falls to ' : 'holds at ') + L.rate + '%; ' + L.dream.toLocaleString('en') + ' pixels are doing their dream job');
+    }
+    // layoffs: a power station closing or a building site finishing
+    for (const e of employers()) {
+      if (e.kind !== 'site') continue;
+      for (let d = Math.max(from, LIFE_START) - ((Math.max(from, LIFE_START) - LIFE_START) % DAY); d < to; d += DAY) {
+        if (operating(e, d) && !operating(e, d + DAY)) {
+          let x = d; while (operating(e, x + H)) x += H;
+          const n = labourAt(x - H).head[e.id] || 0;
+          if (n) emit(x + H, 'jobs.layoffs', n >= 50 ? 3 : 2, 'layoffs:' + e.id + ':' + ymd(x), { employer: e.name, workers: n }, e.name + ' closes, and ' + (n === 1 ? 'its only worker joins' : n + ' workers join') + ' the queue at the Job Centre');
+        }
+      }
+    }
     out.sort((a, b) => (a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     return out;
   }
 
   // ================================================================ public API
   root.PixelUniverse = root.PixelUniverse || {};
+  root.PixelUniverse.labour = {
+    version: VERSION, source: 'jobs', startDate: ymd(LIFE_START + 12 * H), start: LIFE_START, opens: JOB_CENTRE_OPENS, ready, SECTOR,
+    employers: () => (ready() ? employers() : []), operating,
+    /** What a resident does for a living at t: { status: 'employed' | 'looking' | 'away' | 'retired' | 'young', employer, employerName, title, wage, from, to, dream, reason } */
+    jobOf, careerOf: (id, t) => { const c = character(id); return c ? careerUntil(id, c.birth, c.district, t).filter((sp) => sp.from <= t && sp.status !== 'young').map((sp) => Object.assign({}, sp, sp.employer ? { employerName: employers().byId[sp.employer].name } : {})) : []; },
+    careerAt, labourAt, eventsBetween: (from, to) => (ready() ? labourEvents(from, to) : []),
+    /** The ids of everyone employed by one employer at t (for an institution's staff list). */
+    staffOf: (employerId, t) => { const out = []; for (const h of homes()) for (const m of residentsOfHome(h.i, t).members) { if (ageAt(m.birth, t) < 18) continue; const j = careerAt(m.id, m.birth, h.district, t); if (j.status === 'employed' && j.employer === employerId) out.push(m.id); } return out; }
+  };
   root.PixelUniverse.census = {
     version: VERSION, source: 'census', startDate: ymd(OPENS), opens: OPENS, epoch: EPOCH, ready, TRAITS, CONCERNS, PIXELS,
     stateAt(t) {
@@ -508,6 +921,19 @@
     eventsBetween, person, summary, residentsOf, cohort, search, stats, panelAt, panelsBetween, residentOfTheDay,
     /** A resident's identity and character only: name, colour, birth, home, traits. Cheap, for sites that need many. */
     character: (id) => { const c = character(id); return c ? named(c) : null; },
-    homes: () => (ready() ? homes() : []), householdAt: (homeIndex, t) => residentsOfHome(homeIndex, t), movesBetween, ageAt
+    homes: () => (ready() ? homes() : []), householdAt: (homeIndex, t) => residentsOfHome(homeIndex, t), movesBetween, ageAt,
+    lifeStart: LIFE_START, darkAt, litBetween: (from, to) => lifeEvents(from, to),
+    /** Pixels lit and gone dark in the days before t: { lit: [ids], dark: [ids] }, newest first. */
+    recentLife(t, days) {
+      const from = t - days * DAY, lit = [], dark = [];
+      if (t < LIFE_START) return { lit, dark };
+      for (const h of homes()) {
+        const k = tenancyAt(h.i, t).k, hh = household(h.i, k);
+        for (const b of litUntil(h.i, k, t)) if (b.birth >= from && b.birth <= t) lit.push([b.birth, b.id]);
+        for (const m of hh.members.concat(litIn(h.i, k))) { const x = darkAt(m.id, m.birth); if (x >= from && x <= t && x >= LIFE_START) dark.push([x, m.id]); }
+      }
+      const sort = (a) => a.sort((x, y) => y[0] - x[0]).map((x) => x[1]);
+      return { lit: sort(lit), dark: sort(dark) };
+    }
   };
 })(typeof window !== 'undefined' ? window : globalThis);

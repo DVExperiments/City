@@ -104,6 +104,12 @@
     const parks = [];
     try { const st = C.stateAt(dayStart + 12 * H); for (const s of st.sites) if (s.state === 'operating' && (s.type === 'park' || s.type === 'wildlife')) { const f = P.m.features[s.id]; parks.push({ x: f.x, y: f.y, w: f.w, h: f.h, name: s.name, district: f.district }); } } catch (e) { /* no parks today */ }
     const stadium = P.landmark('stadium'), museum = P.landmark('museum'), bookmaker = P.landmark('bookmaker');
+    // from the Life Cycle's start, people go to the jobs the Job Centre's records say they have
+    const LAB = U().labour && U().labour.ready() ? U().labour : null;
+    const EMP = LAB ? LAB.employers().byId : null;
+    const OUTDOOR = { port: 1, parks: 1, building: 1 };
+    const jobCentre = P.landmark('jobs');
+    const jobQueue = jobCentre && { x: jobCentre.x - 0.6, y: jobCentre.y + jobCentre.h, w: jobCentre.w + 1.2, h: 1.2 };
     // Pixel High, once it has opened: the school's own calendar decides the school days, if the school is loaded
     const high = P.landmark('school'), SCH = U().school;
     const highOpen = !!(high && (!C.isPlanned || !C.isPlanned(high, dayStart + 12 * H)));
@@ -131,6 +137,7 @@
         const job = (() => { const local = P.jobs[homeD]; const list = local.length && pr() < 0.55 ? local : P.allJobs; return list[Math.floor(pr() * list.length)]; })();
         const square = P.squares.filter((q) => q.district === homeD)[0] || P.squares[Math.floor(pr() * P.squares.length)];
         const sociable = pr(), early = pr();
+        let work = null;
         const outdoorJob = job && (job.kind === P.T.DOCK || pr() < 0.08);
         const leisure = () => {
           const opts = [];
@@ -161,7 +168,28 @@
             add(at(8 + r() * 0.5), { x: school.x + 0.5, y: school.y + 0.5 }, (6 + r()) * H, 'At school', false, 'Walking to school');
             if (square && r() < 0.5 && !wet(at(15.5))) add(at(15 + r()), inside(square, r), (0.6 + r()) * H, 'Playing in ' + square.name, true, 'Off to play');
           } else if (r() < 0.6) { const [pl, label] = leisure(); if (!wet(at(11))) add(at(10 + r() * 5), inside(pl, r), (1 + r() * 2) * H, label, true, 'Heading out'); }
-        } else if (age < 67 && (!weekend || outdoorJob && r() < 0.3) && job) {
+        } else if (LAB && H0 >= LAB.start && age < 67 && (work = LAB.careerAt(mem.id, mem.birth, homeD, H0 + 12 * H)) && work.status === 'employed' && (!weekend || OUTDOOR[work.sector] && r() < 0.3)) {
+          // the Job Centre's records: a real job, at a real employer
+          const e = EMP[work.employer];
+          const outside = !!OUTDOOR[e.sector];
+          const spot = e.feature ? inside({ x: e.x, y: e.y, w: e.feature.w, h: e.feature.h }, r) : { x: e.x + 0.3 + r() * 0.4, y: e.y + 0.3 + r() * 0.4 };
+          const start = 7 + early * 2 + r() * 0.4, end = 16 + early * 1.5 + r() * 1.2;
+          const where = (outside ? 'Working as a ' : 'At work as a ') + work.title + ', ' + e.name;
+          if (r() < 0.3 && square && !wet(at(12.5))) {
+            add(at(start), spot, (12 - start) * H, where, outside, 'On the way to work');
+            add(at(12 + r() * 0.5), inside(square, r), (0.4 + r() * 0.4) * H, 'Out for lunch in ' + square.name, true, 'Going out for lunch');
+            add(at(13.2), spot, (end - 13.2) * H, where, outside, 'Back to work');
+          } else add(at(start), spot, (end - start) * H, where, outside, 'On the way to work');
+          if (sociable > 0.6 && !wet(at(18.5))) { const [pl, label] = leisure(); add(at(end + 0.6 + r()), inside(pl, r), (1 + r() * 2) * H, label, true, 'Going out for the evening'); }
+        } else if (LAB && H0 >= LAB.start && age < 67 && work && work.status === 'looking') {
+          // looking for work: the queue at the Job Centre on weekday mornings, once it has opened
+          if (!weekend && jobCentre && H0 + 12 * H >= LAB.opens && r() < 0.6) add(at(8.6 + r() * 1.2), inside(jobQueue, r), (0.5 + r() * 0.8) * H, 'Queuing at the Job Centre', true, 'Off to the Job Centre');
+          if (!wet(at(14))) { const [pl, label] = leisure(); add(at(13.5 + r() * 2), inside(pl, r), (0.8 + r() * 1.2) * H, label, true, 'Heading out'); }
+        } else if (LAB && H0 >= LAB.start && age < 67 && work && work.status === 'away' && !weekend) {
+          const shop = P.shops[homeD][Math.floor(r() * (P.shops[homeD].length || 1))];
+          if (shop && !wet(at(10))) add(at(9.5 + r() * 2), { x: shop.x + 0.5, y: shop.y + 1.05 }, (0.2 + r() * 0.4) * H, 'Running errands', true, 'Popping to the shops');
+          if (!wet(at(15))) { const [pl, label] = leisure(); add(at(14 + r() * 2), inside(pl, r), (0.8 + r() * 1.5) * H, label, true, 'Heading out'); }
+        } else if (!(LAB && H0 >= LAB.start) && age < 67 && (!weekend || outdoorJob && r() < 0.3) && job) {
           const start = 7 + early * 2 + r() * 0.4, end = 16 + early * 1.5 + r() * 1.2;
           const work = outdoorJob ? { x: job.x + 0.2 + r() * 0.6, y: job.y + 0.2 + r() * 0.6 } : { x: job.x + 0.5, y: job.y + 0.5 };
           const where = job.kind === P.T.DOCK ? 'Working on the docks' : outdoorJob ? 'Working outdoors on ' + streetName(job) : 'At work ' + P.JOB[job.kind] + streetName(job);

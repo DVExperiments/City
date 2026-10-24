@@ -246,7 +246,7 @@
     ['radio', 'Pixel FM Studios', 4, 4, 62, 30, URL_BASE + 'PixelFM/', false],
     ['observatory', 'The Universe Observatory', 5, 5, 104, 16, URL_BASE + 'Universe/', false],
     ['bank', 'The Bank of Pixel City', 5, 4, 76, 46, null, true],
-    ['jobs', 'The Job Centre', 4, 3, 64, 68, null, true],
+    ['jobs', 'The Job Centre', 4, 3, 64, 68, URL_BASE + 'JobCentre/', true, Date.UTC(2026, 11, 6, 20, 30)], // 8:30am, 7 December, city time
     ['school', 'Pixel High School', 8, 5, 38, 40, URL_BASE + 'PixelHigh/', true, Date.UTC(2026, 10, 15, 20, 30)], // 8:30am, 16 November, city time
     ['university', 'Pixel University', 10, 7, 84, 86, null, true]
   ];
