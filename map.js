@@ -78,15 +78,27 @@
       school: 'Pixel High School', port: 'Ships, cargo and the export dock', gas: 'Gas peakers for the grid', university: 'Planned: not yet open' };
     const EXTRA_LINKS = { port: [BASE + 'Exchange/#/freight', 'Click for freight on the Pixel Exchange'], gas: ['#/power', 'Click for the power grid'] };
     const places = [];
-    for (const f of map.features) if (f.kind === 'landmark') {
-      const extra = EXTRA_LINKS[f.type], link = f.link || (extra && extra[0]) || null;
-      places.push({ f, x: f.x, y: f.y, w: f.w, h: f.h, name: f.name, about: ABOUT[f.type] || '', link, hint: link ? (extra ? extra[1] : 'Click to visit') : '', color: f.type === 'bank' ? '#F2C230' : '#46D6FF' });
+    const W0 = (window.PixelUniverse || {}).climate, RENEWAL = (W0 && W0.renewal) || Date.UTC(2026, 10, 1);
+    const fmtDay = (ms) => new Date(ms + ((W0 && W0.offsetAt) ? W0.offsetAt(ms) : 0)).toLocaleDateString('en-NZ', { timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric' });
+    const nowT = () => (opts.time !== undefined ? opts.time : Date.now());
+    // the renewed city: the buildings the Renewal brings, shown as building sites until then
+    const renewedMapOK = (() => { try { return C.map(RENEWAL + DAY); } catch (e) { return null; } })();
+    const future = !map.squares || !map.squares.length;
+    const featureSet = future && renewedMapOK ? renewedMapOK.features : map.features;
+    const opensOf = (f) => (future && !map.features.some((g) => g.kind === 'landmark' && g.type === f.type) ? Math.max(RENEWAL, f.opens || 0) : f.opens || 0);
+    for (const f of featureSet) if (f.kind === 'landmark') {
+      const extra = EXTRA_LINKS[f.type], link = f.link || (extra && extra[0]) || null, opens = opensOf(f);
+      places.push({ f, x: f.x, y: f.y, w: f.w, h: f.h, name: f.name, about: ABOUT[f.type] || '', link, opens, upcoming: future && opens >= RENEWAL,
+        hint: link ? (extra ? extra[1] : 'Click to visit') : '', color: f.type === 'bank' ? '#F2C230' : '#46D6FF' });
     }
-    for (const q of map.squares || []) {
+    for (const q of (future && renewedMapOK ? renewedMapOK.squares : map.squares) || []) {
       const dname = map.districts[q.district].name, exchange = dname === 'Jaggy';
       places.push(exchange ? { square: q, exchange: true, x: q.x, y: q.y, w: q.w || 3, h: q.h || 3, name: 'The Pixel Exchange', about: 'The trading floor, in Jaggy Square', link: BASE + 'Exchange/', hint: 'Click to visit', color: '#20C3AF' }
         : { square: q, x: q.x, y: q.y, w: q.w || 3, h: q.h || 3, name: q.name, about: 'Where the communities of ' + dname + ' meet', link: 'society.html', hint: 'Click for Pixel City Society', color: PIXEL_COLOR[dname] || '#F3F6F7' });
+      if (future) { const p = places[places.length - 1]; p.upcoming = true; p.opens = RENEWAL; }
     }
+    // what a building's tooltip says about when it opens
+    const whenLine = (p) => { const o = p.opens || 0; return o && nowT() < o ? (p.upcoming && o === RENEWAL ? 'Being built: opens with the Renewal, ' + fmtDay(o) : 'Opens ' + fmtDay(o)) : p.about; };
     const placeAt = (x, y) => { for (const p of places) if (x >= p.x && y >= p.y && x < p.x + p.w && y < p.y + p.h) return p; return null; };
     const placeHref = (p) => { if (!p.link) return null; const q = location.search; return p.link.indexOf('#') === 0 ? p.link : q ? p.link.replace(/(#|$)/, q + '$1') : p.link; };
     // district borders, as line segments, computed once
@@ -711,6 +723,15 @@
       for (let y = 0; y < map.H; y++) for (let x = 0; x < map.W; x++) if (map.owner[y * map.W + x] < 0) paintTile(x, y);
       for (const f of map.features) paintFeature(f, f.kind === 'site' ? state.sites[siteIndex[f.id]] : null, night, state.time);
       tradingFloor();
+      // before the Renewal, the buildings it brings are building sites: hoardings round the plot, and a sign
+      for (const p of places) if (p.upcoming) {
+        const X = p.x * S, Y = p.y * S, W = p.w * S, HH = p.h * S;
+        px(X, Y, W, HH, 'rgba(3,6,13,0.82)');
+        for (let k = 6; k < W - 4; k += 8) px(X + k, Y + 4, 1, HH - 8, 'rgba(70,214,255,0.22)');
+        for (let k = 6; k < HH - 4; k += 8) px(X + 4, Y + k, W - 8, 1, 'rgba(70,214,255,0.22)');
+        marquee(X, Y, W, HH, '#F2C230');
+        sign(X + 4, Y + 4, Math.min(W - 8, 44), p.name.replace(/^The /, ''));
+      }
       tear();
       // night on a screen is the backlight dimming; what emits its own light keeps shining
       if (light < 1) { g.fillStyle = 'rgba(1,3,10,' + ((1 - light) * 0.5).toFixed(3) + ')'; g.fillRect(0, 0, world.width, world.height); }
@@ -910,7 +931,7 @@
       if (hour >= 10 && hour < 16) { const r = Math.random(); return r < 0.4 ? ['Off to the shops', 'To ' + shop()] : r < 0.7 ? ['Going to ' + any(N.landmarks, 'the Museum'), 'On an errand'] : ['Making a delivery', 'For ' + firm('office', 'an office downtown')]; }
       return Math.random() < 0.5 ? ['Heading home', 'From ' + any(N.landmarks, 'the Glacial Stadium')] : ['On the night shift', 'At ' + firm('sprites', 'a Render Plant')];
     }
-    let frameNo = 0;
+    let frameNo = 0, highlight = null;
     function frame(state, light, x, t) {
       frameNo++;
       const now = performance.now(), dt = Math.min(0.1, (now - lastNow) / 1000);
@@ -1131,6 +1152,15 @@
           ctx.fillStyle = d.id === district ? a : dark.has(d.id) ? '#6E7F96' : '#F3F6F7'; ctx.fillText(d.name, lx + 3, ly);
         }
       }
+      if (highlight && now < highlight.until) {
+        const p = highlight.p, pulse = reduce ? 1 : 0.5 + 0.5 * Math.abs(Math.sin(now / 260));
+        ctx.strokeStyle = 'rgba(255,210,90,' + (0.4 + 0.6 * pulse).toFixed(2) + ')'; ctx.lineWidth = 3;
+        const pad = 3 + 5 * pulse; ctx.strokeRect(sx(p.x) - pad, sy(p.y) - pad, p.w * z + pad * 2, p.h * z + pad * 2);
+        ctx.font = '700 13px "Bricolage Grotesque", system-ui, sans-serif'; ctx.textAlign = 'center';
+        const label = p.name, tw = ctx.measureText(label).width, lx = sx(p.x + p.w / 2), ly = sy(p.y) - pad - 10;
+        ctx.fillStyle = 'rgba(3,6,13,0.85)'; ctx.fillRect(lx - tw / 2 - 8, ly - 14, tw + 16, 20);
+        ctx.fillStyle = '#FFD25A'; ctx.fillText(label, lx, ly);
+      }
       const box = (f, c) => { ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.strokeRect(sx(f.x) - 1, sy(f.y) - 1, f.w * z + 2, f.h * z + 2); };
       if (hover && hover.x !== undefined && hover !== selected && !hoverPerson) box(hover, 'rgba(196,247,255,0.8)');
       if (selected) box(selected, '#FFD25A');
@@ -1178,7 +1208,7 @@
       const car = e.pointerType === 'mouse' ? carAt(p) : null;
       if (car) { if (!car.label) car.label = journey(car); infoTip({ title: car.label[0], line: car.label[1], color: car.c, x: p.x, y: p.y }); canvas.style.cursor = 'default'; hover = null; return; }
       const tl = tileAt(p.x, p.y), place = placeAt(tl.x, tl.y);
-      if (place && e.pointerType === 'mouse') { infoTip({ title: place.name, line: place.about, hint: place.hint, color: place.color, x: p.x, y: p.y }); hover = place.f || null; canvas.style.cursor = place.link ? 'pointer' : 'grab'; return; }
+      if (place && e.pointerType === 'mouse') { infoTip({ title: place.name, line: whenLine(place), hint: place.hint, color: place.color, x: p.x, y: p.y }); hover = place.f || null; canvas.style.cursor = place.link ? 'pointer' : 'grab'; return; }
       hideTip();
       hover = shipAt(p) || featureAt(tl.x, tl.y);
       canvas.style.cursor = hover ? 'pointer' : 'grab';
@@ -1236,14 +1266,38 @@
     resize();
     fit();
     window.addEventListener('resize', resize);
+    // the Buildings panel: every site in the universe, and where it stands. Choose one to fly to it.
+    const panel = document.createElement('div');
+    panel.className = 'citydir'; panel.hidden = true; panel.setAttribute('role', 'region'); panel.setAttribute('aria-label', 'Buildings');
+    if (host) host.appendChild(panel);
+    function drawPanel() {
+      const t = nowT(), sites = places.filter((p) => p.link && !p.square), squares = places.filter((p) => p.square && !p.exchange), ex = places.find((p) => p.exchange);
+      if (ex) sites.splice(1, 0, ex);
+      sites.sort((a, b) => a.name.replace(/^The /, '').localeCompare(b.name.replace(/^The /, '')));
+      const item = (p, i) => '<li><button type="button" data-i="' + places.indexOf(p) + '"><i style="background:' + p.color + '"></i><span><b>' + escapeHtml(p.name) + '</b>' +
+        '<small>' + escapeHtml(p.opens && t < p.opens ? 'Opens ' + fmtDay(p.opens) : p.about) + '</small></span></button>' + (p.link ? '<a href="' + escapeHtml(placeHref(p)) + '" aria-label="Visit ' + escapeHtml(p.name) + '">Visit</a>' : '') + '</li>';
+      panel.innerHTML = '<div class="citydir-head"><b>Buildings</b><button type="button" class="citydir-close" aria-label="Close">\u00d7</button></div>' +
+        '<p class="citydir-note">Every site in the Pixel Universe has a building. Choose one to see where it stands.</p><ul>' + sites.map(item).join('') + '</ul>' +
+        (squares.length ? '<p class="citydir-sub">Town squares, where each district\u2019s communities meet</p><ul>' + squares.map(item).join('') + '</ul>' : '');
+      panel.querySelector('.citydir-close').onclick = () => toggleDir(false);
+      panel.querySelectorAll('button[data-i]').forEach((b) => (b.onclick = () => showPlace(places[+b.dataset.i])));
+    }
+    function showPlace(p) {
+      cam.x = p.x + p.w / 2; cam.y = p.y + p.h / 2; cam.z = Math.max(cam.z, Math.min(16, (cw / map.W) * 4)); clampCam();
+      highlight = { p, until: performance.now() + 7000 };
+      if (cw < 700) toggleDir(false); // on a phone, get out of the way of the map
+    }
+    function toggleDir(open) { if (open === undefined) open = panel.hidden; if (open) drawPanel(); panel.hidden = !open; return open; }
+
     return {
+      toggleDirectory: toggleDir,
       frame: (state, light, x, t) => { lastState = state; frame(state, light, x, t); },
       refresh: () => { worldKey = ''; },
       zoom: (k) => zoomAt(cw / 2, ch / 2, k), fit,
       focus: (x, y, z) => { cam.x = x; cam.y = y; if (z) cam.z = z; clampCam(); },
       selectDistrict: (id) => { district = id; selected = null; },
       toggleDistricts: () => { showDistricts = !showDistricts; return showDistricts; },
-      destroy: () => { window.removeEventListener('resize', resize); if (tip.parentNode) tip.parentNode.removeChild(tip); },
+      destroy: () => { window.removeEventListener('resize', resize); if (tip.parentNode) tip.parentNode.removeChild(tip); if (panel.parentNode) panel.parentNode.removeChild(panel); },
       map
     };
   };

@@ -110,3 +110,5 @@ Every site in the Pixel Universe has a building on the map. Hover over one to se
 Every packet moving on the data buses is going somewhere: hover over one to see. Freight runs along the supply chain between real businesses from the Exchange (raw colour to the refineries, palettes to the foundries, textures and codecs to the render plants, sprites to the export dock, stock to the shops); pixels go to work in the morning, home in the evening, to the shops and the city's buildings by day, and to the Glacial Stadium on Grand Prix days. Journeys are decoration, never recorded.
 
 What you select shows in a card on the map itself, at its lower left, so it is always in view; close it with the ×.
+
+**The Buildings panel.** The Buildings button on the map opens a list of every site and town square. Choose one and the map flies to it and highlights it for a few seconds; Visit goes straight there. Before the Renewal (1 November 2026), the buildings it brings stand on the map as fenced building sites where they will be, with their opening dates on hover; buildings that open later (Pixel High, the Job Centre, the Bank) show their opening dates too.

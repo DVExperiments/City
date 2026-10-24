@@ -255,3 +255,22 @@ table.data { width: 100%; border-collapse: collapse; font-size: 0.97rem; }
 .selclose:hover { background: rgba(70,214,255,0.15); }
 .maphint { opacity: 0.7; }
 @media (max-width: 600px) { .selcard { left: 10px; right: 10px; width: auto; bottom: 46px; max-height: 55%; } .maphint { display: none; } }
+
+/* the Buildings panel: every site, on the map's right-hand side */
+.citydir { position: absolute; top: 58px; right: 14px; bottom: 50px; z-index: 4; width: min(320px, calc(100% - 28px)); overflow: auto; padding: 12px 12px 14px;
+  background: rgba(7,12,22,0.95); border: 1px solid rgba(70,214,255,0.3); border-radius: 8px; color: #E1E9EC; box-shadow: 0 12px 34px rgba(0,0,0,0.5); }
+.citydir[hidden] { display: none; }
+.citydir-head { display: flex; justify-content: space-between; align-items: center; font-size: 1.05rem; }
+.citydir-close { background: transparent; border: 0; color: #C4F7FF; font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 2px 8px; border-radius: 4px; }
+.citydir-close:hover { background: rgba(70,214,255,0.15); }
+.citydir-note, .citydir-sub { color: #9FB0BA; font-size: 0.85rem; margin: 6px 0 10px; }
+.citydir-sub { margin-top: 16px; }
+.citydir ul { list-style: none; margin: 0; padding: 0; }
+.citydir li { display: flex; align-items: center; gap: 6px; border-top: 1px solid #1F2B33; }
+.citydir li button { flex: 1; display: flex; gap: 10px; align-items: flex-start; text-align: left; background: transparent; border: 0; color: inherit; padding: 8px 4px; cursor: pointer; font: inherit; border-radius: 4px; }
+.citydir li button:hover, .citydir li button:focus-visible { background: rgba(70,214,255,0.1); }
+.citydir li i { width: 10px; height: 10px; margin-top: 5px; flex: none; }
+.citydir li b { display: block; font-weight: 600; font-size: 0.93rem; }
+.citydir li small { display: block; color: #9FB0BA; font-size: 0.8rem; }
+.citydir li a { color: #82D6FF; font-size: 0.85rem; padding: 6px; }
+@media (max-width: 600px) { .citydir { top: 52px; right: 8px; left: 8px; width: auto; bottom: 44px; } }

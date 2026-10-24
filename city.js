@@ -63,7 +63,7 @@
     render() {
       return '<section class="page-head" style="padding-bottom:14px"><p class="kicker" id="kicker">\u00a0</p><h1 class="status" id="status">\u00a0</h1></section>' +
         '<figure class="screen mapwrap"><canvas id="citymap" class="citymap" tabindex="0" aria-label="Map of Pixel City. Drag to move, scroll or pinch to zoom, select a building for details."></canvas>' +
-        '<div class="mapctl"><button type="button" id="zin" aria-label="Zoom in">+</button><button type="button" id="zout" aria-label="Zoom out">\u2212</button><button type="button" id="zfit">Whole city</button><button type="button" id="zdist" aria-pressed="true">Districts</button></div>' +
+        '<div class="mapctl"><button type="button" id="zin" aria-label="Zoom in">+</button><button type="button" id="zout" aria-label="Zoom out">\u2212</button><button type="button" id="zdir" aria-pressed="false">Buildings</button><button type="button" id="zfit">Whole city</button><button type="button" id="zdist" aria-pressed="true">Districts</button></div>' +
         // what's selected shows on the map itself, so it is never below the fold
         '<div class="selcard" id="selcard" hidden role="region" aria-live="polite" aria-labelledby="selTitle"><button type="button" class="selclose" id="selclose" aria-label="Close">\u00d7</button><h2 id="selTitle"></h2><div id="selection"></div></div>' +
         '<figcaption class="screen-bar"><span id="barleft"></span><span class="maphint">Hover over a building or a moving packet to see what it is. Select anything else for details.</span><span class="clock" id="clock"></span></figcaption></figure>' +
@@ -78,6 +78,7 @@
       const view = window.CityMap(document.getElementById('citymap'), { onSelect: (sel) => showSelection(sel), time: now(), personHref: (id) => 'census.html' + AT + '#/resident/' + id });
       if (window.__cityFocus) { view.focus(window.__cityFocus[0] + 0.5, window.__cityFocus[1] + 0.5, 12); window.__cityFocus = null; }
       document.getElementById('selclose').onclick = () => { document.getElementById('selcard').hidden = true; view.selectDistrict(-1); };
+      document.getElementById('zdir').onclick = (e) => e.currentTarget.setAttribute('aria-pressed', String(view.toggleDirectory()));
       document.getElementById('zin').onclick = () => view.zoom(1.6);
       document.getElementById('zout').onclick = () => view.zoom(1 / 1.6);
       document.getElementById('zfit').onclick = () => view.fit();
