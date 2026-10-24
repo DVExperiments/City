@@ -75,7 +75,7 @@
     const BASE = 'https://dvexperiments.github.io/';
     const ABOUT = { senate: 'Where the Pixel Senate sits', stadium: 'Home of Glacial: the slowest race in the universe', bureau: 'The Weather Bureau', bookmaker: 'Odds on every race', press: 'Where the Daily Pixel is written',
       museum: 'The history of the Pixel Universe', census: 'A file on every resident', radio: 'Pixel FM, 88.8', observatory: 'The whole Pixel Universe at a glance', bank: 'The Bank of Pixel City', jobs: 'Work, and looking for it',
-      school: 'Pixel High School', port: 'Ships, cargo and the export dock', gas: 'Gas peakers for the grid', university: 'Planned: not yet open' };
+      school: 'Pixel High School', university: 'Where pixels learn to do more', port: 'Ships, cargo and the export dock', gas: 'Gas peakers for the grid' };
     const EXTRA_LINKS = { port: [BASE + 'Exchange/#/freight', 'Click for freight on the Pixel Exchange'], gas: ['#/power', 'Click for the power grid'] };
     const places = [];
     const W0 = (window.PixelUniverse || {}).climate, RENEWAL = (W0 && W0.renewal) || Date.UTC(2026, 10, 1);
@@ -606,6 +606,18 @@
             dither(fx0 + 11, fy0 + 11, fw - 22, fh - 22, '#0E3A26', '#125A36', 3);
             px(fx0 + fw / 2, fy0 + 11, 1, fh - 22, 'rgba(255,255,255,0.6)');
             ['#FF3355', '#2BFF88', '#3D8BFF', '#B9C3CA'].forEach((c, k) => { px(X + bw + 4, Y + 10 + k * 16, 1, 10, '#9FB4C8'); px(X + bw + 5, Y + 10 + k * 16, 5, 4, c); });
+            break;
+          }
+          case 'university': { // Pixel University: faculties round a quad, a library dome, and a clock tower
+            dither(X + 2, Y + 2, W - 4, HH - 4, '#0E3A26', '#125A36', 1); // the quad
+            px(X + W / 2 - 1, Y + 2, 2, HH - 4, '#C9D6E2'); px(X + 2, Y + HH / 2 - 1, W - 4, 2, '#C9D6E2'); // paths
+            for (const [fx, fy, fw, fh] of [[X + 4, Y + 4, 40, 22], [X + W - 44, Y + 4, 40, 22], [X + 4, Y + HH - 26, 40, 22], [X + W - 44, Y + HH - 26, 40, 22]]) {
+              slab(fx, fy, fw, fh, '#141A2C', '#B9A6FF', false);
+              for (let k = 0; k < fw - 8; k += 6) px(fx + 4 + k, fy + 5, 3, 4, '#FFE07A');
+              for (let k = 0; k < fw - 8; k += 6) px(fx + 4 + k, fy + 13, 3, 4, '#B9A6FF');
+            }
+            disc(X + W / 2, Y + HH / 2, 14, 'rgba(185,166,255,0.2)'); disc(X + W / 2, Y + HH / 2, 12, '#2A2450'); disc(X + W / 2, Y + HH / 2, 8, '#5A4FA8'); disc(X + W / 2 - 3, Y + HH / 2 - 3, 3, '#D9D0FF'); // the library
+            px(X + W - 60, Y + HH / 2 - 18, 8, 36, '#3A3458'); px(X + W - 59, Y + HH / 2 - 17, 6, 6, '#F3F6F7'); px(X + W - 57, Y + HH / 2 - 15, 1, 3, '#14121C'); // the clock tower
             break;
           }
           case 'bank': { // the Bank of Pixel City: a vault door between gold columns

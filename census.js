@@ -527,6 +527,27 @@
    * A job at a power station or a building site is checked for a closure only up to t, never beyond: the future
    * of the city isn't known yet. The check resumes when a later moment is asked about.
    */
+  // ---------------------------------------------------------------- Pixel University (from 1 March 2027)
+  // School leavers often go, adults sometimes, and pixels out of work most of all. A degree takes three years, a diploma
+  // one (older students take diplomas). What they read follows their dream job. Graduates move up: in a trade their
+  // faculty knows, they take a senior role; anywhere else, a senior version of the job. Either way they're paid more.
+  const UNI_OPENS = Date.UTC(2027, 2, 1), UNI_APPLY = Date.UTC(2026, 10, 1);
+  const FACULTIES = [
+    { id: 'rendering', name: 'School of Rendering', course: 'Rendering Engineering', sector: 'factory', roles: ['render line manager', 'chief texture engineer', 'plant director'] },
+    { id: 'colour', name: 'Faculty of Colour', course: 'Palette Science and Colour Theory', sector: 'shop', roles: ['head of palette', 'colour director', 'chief colourist'] },
+    { id: 'signal', name: 'Department of Signal and Compression', course: 'Signal Theory', sector: 'warehouse', roles: ['logistics director', 'compression architect', 'head of dispatch'] },
+    { id: 'economics', name: 'School of Brightness Economics', course: 'Brightness Economics', sector: 'office', roles: ['chief economist', 'senior analyst', 'partner'] },
+    { id: 'governance', name: 'School of Governance', course: 'Governance and the Pixel State', sector: 'office', roles: ['policy adviser', 'Senate researcher', 'head of public affairs'] },
+    { id: 'arts', name: 'Faculty of the Arts', course: 'Dithering, Typesetting and Music for Pixels', sector: null, roles: ['art director', 'composer in residence', 'head of typography'] },
+    { id: 'philosophy', name: 'Department of Philosophy', course: 'Philosophy of the Refresh', sector: null, roles: ['resident philosopher', 'ethics adviser'] }
+  ];
+  function chooseFaculty(id, ru) {
+    // a pixel reads what their dream points at, more often than not
+    const want = dream(id), w = FACULTIES.map((f) => (f.sector && SECTOR[f.sector] && SECTOR[f.sector].titles.indexOf(want) >= 0 ? 4 : 1) * (f.id === 'governance' || f.id === 'philosophy' ? 0.6 : 1));
+    let tot = 0; for (const x of w) tot += x; let u = ru() * tot;
+    for (let i = 0; i < w.length; i++) { u -= w[i]; if (u < 0) return FACULTIES[i]; }
+    return FACULTIES[0];
+  }
   function careerUntil(id, birth, district, t) {
     let c = careerCache.get(id);
     if (!c) {
@@ -565,6 +586,22 @@
       const age = (S - birth) / YEAR;
       if (S >= retireAt) { c.spells.push({ from: S, to: Infinity, status: 'retired' }); c.next = Infinity; break; }
       if (age < 18) { c.spells.push({ from: S, to: birth + 18 * YEAR, status: 'young' }); c.next = birth + 18 * YEAR; continue; }
+      if (S >= UNI_APPLY && !c.degree && age < 60) { // applications open with the Renewal, for the first year in March 2027 // Pixel University: its own seed, so nothing else in a life is drawn differently
+        const ru = seeded('uni:' + id + ':' + k), prev = c.spells[c.spells.length - 1];
+        const chance = age < 25 ? 0.3 : prev && prev.status === 'looking' ? 0.14 : 0.025;
+        if (ru() < chance) {
+          // everyone starts together on 1 March, and finishes on 1 December, graduation day
+          const fac = chooseFaculty(id, ru), years = age < 25 ? 3 : 1, y0 = new Date(S).getUTCFullYear(), start = S <= Date.UTC(y0, 2, 1) ? Date.UTC(y0, 2, 1) : Date.UTC(y0 + 1, 2, 1);
+          const y1 = new Date(start).getUTCFullYear() + years - 1, end = Date.UTC(y1, 11, 1);
+          if (end < retireAt) {
+            if (start > S) c.spells.push({ from: S, to: start, status: 'away', reason: 'Waiting to start at Pixel University' });
+            c.spells.push({ from: start, to: end, status: 'studying', faculty: fac.id, course: fac.course, award: years === 3 ? 'degree' : 'diploma', reason: 'Studying ' + fac.course + ' at Pixel University' });
+            c.degree = { faculty: fac.id, course: fac.course, award: years === 3 ? 'degree' : 'diploma', started: start, graduated: end };
+            c.next = end;
+            continue;
+          }
+        }
+      }
       const len = Math.floor((1 + r() * r() * 6) * YEAR);
       const part = age < 22 ? 0.5 : age < 60 ? 0.87 : 0.6;
       if (r() >= part) {
@@ -594,8 +631,13 @@
         continue;
       }
       const want = dream(id);
-      const title = e.titles.indexOf(want) >= 0 && r() < 0.5 ? want : pick(r, e.titles);
-      const wage = Math.round(SECTOR[e.sector].wage * (0.85 + r() * 0.3) * (1 + Math.min(0.4, (age - 22) * 0.01)) / 10) * 10;
+      let title = e.titles.indexOf(want) >= 0 && r() < 0.5 ? want : pick(r, e.titles);
+      let wage = Math.round(SECTOR[e.sector].wage * (0.85 + r() * 0.3) * (1 + Math.min(0.4, (age - 22) * 0.01)) / 10) * 10;
+      if (c.degree && S >= c.degree.graduated) { // a graduate moves up
+        const fac = FACULTIES.find((f) => f.id === c.degree.faculty);
+        title = fac.sector === e.sector ? fac.roles[hash('role:' + id + ':' + k) % fac.roles.length] : 'senior ' + title;
+        wage = Math.round(wage * (c.degree.award === 'degree' ? 1.3 : 1.15) / 10) * 10;
+      }
       const planned = Math.min(S + len, retireAt);
       const spell = { from: S, to: planned, status: 'employed', employer: e.id, title, wage, dream: title === want };
       if (occ) { spell.name = occ.name; spell.gen = occ.generation; }
@@ -620,6 +662,52 @@
   }
   const labourCache = new Map();
   /** The labour market at time t: totals, by sector and district, employers' headcounts, vacancies and the queue. */
+  const uniCache = new Map();
+  function universityAt(t) {
+    if (t < UNI_OPENS) return { open: false, opens: UNI_OPENS, faculties: FACULTIES.map((f) => ({ id: f.id, name: f.name, course: f.course, roles: f.roles })) };
+    const d = Math.floor(t / DAY);
+    if (uniCache.has(d)) return uniCache.get(d);
+    const map = renewedMap();
+    const fac = {}; for (const f of FACULTIES) fac[f.id] = { id: f.id, name: f.name, course: f.course, roles: f.roles, students: 0, degree: 0, diploma: 0, graduates: 0, newThisYear: 0 };
+    const out = { open: true, students: 0, graduates: 0, graduatesWorking: 0, graduatesThisYear: 0, startedThisYear: 0, byDistrict: map.districts.map((x) => ({ id: x.id, name: x.name, students: 0, graduates: 0 })), sampleStudents: [], sampleGraduates: [] };
+    const yr = new Date(t).getUTCFullYear(), yearStart = t >= Date.UTC(yr, 2, 1) ? Date.UTC(yr, 2, 1) : Date.UTC(yr - 1, 2, 1), lastGrad = t >= Date.UTC(yr, 11, 1) ? Date.UTC(yr, 11, 1) : Date.UTC(yr - 1, 11, 1);
+    for (const h of homes()) for (const m of residentsOfHome(h.i, t).members) {
+      if (ageAt(m.birth, t) < 18) continue;
+      const spells = careerUntil(m.id, m.birth, h.district, t), c = careerCache.get(m.id);
+      if (!c || !c.degree) continue;
+      const now = spells.find((sp) => sp.from <= t && t < sp.to), g = c.degree, F = fac[g.faculty];
+      const started = g.started;
+      if (started > t) continue;
+      if (started === yearStart) { out.startedThisYear++; F.newThisYear++; }
+      if (now && now.status === 'studying') { out.students++; F.students++; F[g.award]++; out.byDistrict[h.district].students++; if (out.sampleStudents.length < 400) out.sampleStudents.push({ id: m.id, faculty: g.faculty, award: g.award, until: g.graduated }); }
+      else if (g.graduated <= t) {
+        out.graduates++; F.graduates++; out.byDistrict[h.district].graduates++;
+        if (g.graduated === lastGrad) out.graduatesThisYear++;
+        if (now && now.status === 'employed') { out.graduatesWorking++; if (out.sampleGraduates.length < 400) out.sampleGraduates.push({ id: m.id, faculty: g.faculty, award: g.award, graduated: g.graduated, title: now.title, employer: now.name || (employers().byId[now.employer] || {}).name }); }
+      }
+    }
+    out.faculties = FACULTIES.map((f) => fac[f.id]);
+    uniCache.set(d, out); if (uniCache.size > 6) uniCache.delete(uniCache.keys().next().value);
+    return out;
+  }
+  /** The University's calendar: it opens; each 1 March a new year begins; each 1 December, graduation. */
+  function universityEvents(from, to) {
+    const out = [];
+    for (let y = 2027; y <= new Date(to).getUTCFullYear(); y++) {
+      const term = Date.UTC(y, 2, 1) - 3.5 * H, grad = Date.UTC(y, 11, 1, 2); // 8:30am 1 March and 3pm 1 December, city time
+      if (term >= from && term < to) {
+        const u = universityAt(Date.UTC(y, 2, 1) + DAY);
+        out.push({ id: 'university:term:' + y, time: iso(term), ms: term, source: 'university', type: y === 2027 ? 'university.opens' : 'university.term', importance: y === 2027 ? 4 : 2, data: { started: u.startedThisYear },
+          headline: y === 2027 ? 'Pixel University opens its doors, and ' + u.startedThisYear.toLocaleString('en') + ' pixels begin their studies' : 'A new year begins at Pixel University: ' + u.startedThisYear.toLocaleString('en') + ' pixels start courses' });
+      }
+      if (grad >= from && grad < to) {
+        const u = universityAt(grad);
+        out.push({ id: 'university:graduation:' + y, time: iso(grad), ms: grad, source: 'university', type: 'university.graduation', importance: 3, data: { graduates: u.graduatesThisYear },
+          headline: 'Graduation day at Pixel University: ' + u.graduatesThisYear.toLocaleString('en') + ' pixels collect their degrees and diplomas' });
+      }
+    }
+    return out;
+  }
   function labourAt(t) {
     if (t < LIFE_START) return null;
     const d = Math.floor((t - LIFE_START) / DAY);
@@ -634,7 +722,7 @@
         out.bySector[j.sector] = (out.bySector[j.sector] || 0) + 1; out.byDistrict[h.district].employed++;
         if (j.dream) out.dream++;
       } else if (j.status === 'looking') { out.looking++; out.byDistrict[h.district].looking++; out.queue.push({ id: m.id, since: j.from, reason: j.reason }); }
-      else if (j.status === 'retired') out.retired++; else out.away++;
+      else if (j.status === 'retired') out.retired++; else if (j.status === 'studying') out.studying = (out.studying || 0) + 1; else out.away++;
     }
     out.rate = out.employed + out.looking ? Math.round(out.looking / (out.employed + out.looking) * 1000) / 10 : 0;
     out.queue.sort((a, b) => a.since - b.since);
@@ -930,6 +1018,7 @@
   root.PixelUniverse = root.PixelUniverse || {};
   root.PixelUniverse.labour = {
     version: VERSION, source: 'jobs', startDate: ymd(LIFE_START + 12 * H), start: LIFE_START, opens: JOB_CENTRE_OPENS, ready: fullReady, registryReady: ready, SECTOR,
+    universityAt: (t) => (fullReady() ? universityAt(t) : null), universityEventsBetween: (from, to) => (fullReady() ? universityEvents(from, to) : []), universityOpens: UNI_OPENS, FACULTIES,
     employers: () => (ready() ? employers() : []), operating,
     /** What a resident does for a living at t: { status: 'employed' | 'looking' | 'away' | 'retired' | 'young', employer, employerName, title, wage, from, to, dream, reason } */
     jobOf, careerOf: (id, t) => { const c = character(id); return c ? careerUntil(id, c.birth, c.district, t).filter((sp) => sp.from <= t && sp.status !== 'young').map((sp) => Object.assign({}, sp, sp.employer ? { employerName: sp.name || employers().byId[sp.employer].name } : {})) : []; },

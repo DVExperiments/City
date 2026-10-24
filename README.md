@@ -112,3 +112,7 @@ Every packet moving on the data buses is going somewhere: hover over one to see.
 What you select shows in a card on the map itself, at its lower left, so it is always in view; close it with the ×.
 
 **The Buildings panel.** The Buildings button on the map opens a list of every site and town square. Choose one and the map flies to it and highlights it for a few seconds; Visit goes straight there. Before the Renewal (1 November 2026), the buildings it brings stand on the map as fenced building sites where they will be, with their opening dates on hover; buildings that open later (Pixel High, the Job Centre, the Bank) show their opening dates too.
+
+## Pixel University (from 1 March 2027)
+
+The University's plot opens at 8:30am city time on 1 March 2027 (a campus round a quad, with a library dome and a clock tower) and links to its site. Studying is part of working lives in `census.js`: from the Renewal, residents may apply when their working lives turn a corner (school leavers often, the unemployed sometimes, others now and then), start together each 1 March, and graduate on 1 December, after three years (degree) or one (diploma). Their faculty follows their dream job; graduates take senior roles and better pay. Students count as studying, not looking for work. `labour.universityAt(t)` and `labour.universityEventsBetween(from, to)` serve the University's site and the Daily Pixel.
