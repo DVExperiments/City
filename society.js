@@ -259,7 +259,7 @@
     for (const e of Com().eventsBetween(dayStart(k - 1), to)) if (e.type === 'business.closed') { const d = C.districts.findIndex((x) => x.name === e.data.district); if (d >= 0) jobsLost[d] += e.data.jobs || 0; }
     const glitch = new Float64Array(C.D);
     if (City().glitchesBetween) for (const g of City().glitchesBetween(d0, d0 + DAY)) glitch[g.district] += clamp(((g.end < d0 + DAY ? g.end : d0 + DAY) - (g.start > d0 ? g.start : d0)) / DAY, 0, 1) * g.severity / 3;
-    return { aqi: ch.aqi || 40, dark: ch.dark || {}, cpi: ex.cpi || 100, conf: ex.confidence || 100, shelves: fr ? fr.shelves : null, jobsLost, staffD: ex.staffD || null, glitch };
+    return { aqi: ch.aqi || 40, dark: ch.dark || {}, cpi: ex.cpi || 100, conf: ex.confidence || 100, shelves: fr ? fr.shelves : null, jobsLost, staffD: ex.staffD || null, rentD: ex.rentD || null, glitch };
   }
   function opinionDay() {
     const C = communities(), k = OP.k, N = C.list.length, r = seeded('opinions:' + k);
@@ -325,7 +325,8 @@
         let m = 0, wsum = 0; for (const c of C.byDistrict[d]) { m += OP.mood[c.i] * c.size; wsum += c.size; } m = wsum ? m / wsum : 0.65;
         const jobR = OP.staff0[d] > 0 ? w.staffD[d] / OP.staff0[d] : 1, smog = clamp((w.aqi - 80) / 120, 0, 1), dark = clamp((w.dark[d] || 0) / 6, 0, 1);
         const leave = 0.00012 + 0.0006 * smog + 0.0005 * dark + 0.0008 * clamp(1 - jobR, 0, 1) + 0.0006 * clamp(0.6 - m, 0, 1) + 0.0004 * w.glitch[d];
-        const pull = clamp(jobR, 0, 1.3), come = (1 - p2[d]) * 0.004 * pull * pull * (w.conf / 100) + 0.00012;
+        const cheap = w.rentD ? clamp(1 - w.rentD[d], 0, 0.5) : 0; // cheap rents draw new residents to a district others left
+        const pull = clamp(jobR, 0, 1.3), come = (1 - p2[d]) * 0.004 * (pull * pull + 1.5 * cheap) * (w.conf / 100) + 0.00012;
         const was = p2[d];
         p2[d] = clamp(p2[d] + come - leave, 0.5, 1);
         const res = C.districts[d].residents;

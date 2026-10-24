@@ -116,3 +116,5 @@ What you select shows in a card on the map itself, at its lower left, so it is a
 ## Pixel University (from 1 March 2027)
 
 The University's plot opens at 8:30am city time on 1 March 2027 (a campus round a quad, with a library dome and a clock tower) and links to its site. Studying is part of working lives in `census.js`: from the Renewal, residents may apply when their working lives turn a corner (school leavers often, the unemployed sometimes, others now and then), start together each 1 March, and graduate on 1 December, after three years (degree) or one (diploma). Their faculty follows their dream job; graduates take senior roles and better pay. Students count as studying, not looking for work. `labour.universityAt(t)` and `labour.universityEventsBetween(from, to)` serve the University's site and the Daily Pixel.
+
+Society's migration also reads the Exchange's district rents (from 1 June 2027): cheap rents draw arrivals back to a district others have left.
