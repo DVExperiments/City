@@ -27,11 +27,12 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const START = Date.UTC(2026, 11, 1); // the December Grand Prix: Society begins with freight
   const VOTES_FROM = Date.UTC(2027, 4, 1); // elections read Society from the May 2027 general election
-  const POLL_LAG = 14 * DAY; // the Senate's elections read the mood a fortnight before polling day
+  const POLL_LAG = 14 * DAY;
+  const MIG_START = Date.UTC(2027, 2, 1); // from 1 March 2027 pixels move in and out of the city // the Senate's elections read the mood a fortnight before polling day
 
   function rng(a) {
     return function () {
@@ -244,7 +245,7 @@
       for (let j = 0; j < 4; j++) lean[c.i * 4 + j] = w[j] / tot;
       mood[c.i] = 0.6 + (r() - 0.5) * 0.1;
     }
-    OP = { k: 0, lean, mood, base: lean.slice(), days: [], events: [], rival: {}, top: {}, turned: {} };
+    OP = { k: 0, lean, mood, base: lean.slice(), days: [], events: [], rival: {}, top: {}, turned: {}, pop: new Float64Array(C.D).fill(1), staff0: null, exodus: {}, full: {}, month: { left: new Float64Array(C.D), came: new Float64Array(C.D) } };
   }
   const cityChunk = new Map(), exChunk = new Map();
   function worldYesterday(k) { // what happened on trading day k-1, as each district felt it
@@ -256,13 +257,15 @@
     const fr = Fr() ? Fr().historyBetween(d0, to).slice(-1)[0] : null;
     const jobsLost = new Float64Array(C.D);
     for (const e of Com().eventsBetween(dayStart(k - 1), to)) if (e.type === 'business.closed') { const d = C.districts.findIndex((x) => x.name === e.data.district); if (d >= 0) jobsLost[d] += e.data.jobs || 0; }
-    return { aqi: ch.aqi || 40, dark: ch.dark || {}, cpi: ex.cpi || 100, conf: ex.confidence || 100, shelves: fr ? fr.shelves : null, jobsLost };
+    const glitch = new Float64Array(C.D);
+    if (City().glitchesBetween) for (const g of City().glitchesBetween(d0, d0 + DAY)) glitch[g.district] += clamp(((g.end < d0 + DAY ? g.end : d0 + DAY) - (g.start > d0 ? g.start : d0)) / DAY, 0, 1) * g.severity / 3;
+    return { aqi: ch.aqi || 40, dark: ch.dark || {}, cpi: ex.cpi || 100, conf: ex.confidence || 100, shelves: fr ? fr.shelves : null, jobsLost, staffD: ex.staffD || null, glitch };
   }
   function opinionDay() {
     const C = communities(), k = OP.k, N = C.list.length, r = seeded('opinions:' + k);
     const at = dayStart(k) + DAY;
     const emit = (type, importance, idPart, data, headline, sec) => OP.events.push({ id: 'society:' + idPart, time: iso(at + sec * 1000), ms: at + sec * 1000, source: 'society', type, importance, data, headline });
-    const w = k > 0 ? worldYesterday(k) : { aqi: 40, dark: {}, cpi: 100, conf: 100, shelves: null, jobsLost: new Float64Array(C.D) };
+    const w = k > 0 ? worldYesterday(k) : { aqi: 40, dark: {}, cpi: 100, conf: 100, shelves: null, jobsLost: new Float64Array(C.D), staffD: null, glitch: new Float64Array(C.D) };
     const tr = tasteRecord(k);
     // what each district has been through yesterday, as pressure towards each party
     const push = [], hardship = new Float64Array(C.D);
@@ -273,7 +276,7 @@
       // Verdant for clean air; Brightness for the lights and for good times; Legacy Mode when prices bite and the
       // shelves are empty; and, when jobs go, a turn against all of them
       push.push({ V: smog * 0.9, B: dark * 0.8 + boom * 0.4, L: prices * 0.7 + shelf * 0.5 + lost * 0.3, I: lost * 0.6 + shelf * 0.2 });
-      hardship[d] = clamp(smog * 0.4 + dark * 0.5 + lost * 0.8 + shelf * 0.4 + prices * 0.3, 0, 1);
+      hardship[d] = clamp(smog * 0.4 + dark * 0.5 + lost * 0.8 + shelf * 0.4 + prices * 0.3 + w.glitch[d] * 0.6, 0, 1);
     }
     // friends pull each other's views together, and the day's events push them
     const heardLean = []; for (let j = 0; j < 4; j++) { const v = new Float64Array(N); for (let i = 0; i < N; i++) v[i] = OP.lean[i * 4 + j]; heardLean.push(heard(v)); }
@@ -313,11 +316,39 @@
       const [a1, b1] = key.split(':').map(Number);
       if (OP.top[a1] === OP.top[b1] && k - OP.rival[key] > 14) { delete OP.rival[key]; emit('society.reconciled', 1, 'mend:' + key + ':' + ymd(dayStart(k)), { a: C.list[a1].name, b: C.list[b1].name }, 'The ' + C.list[a1].name + ' and the ' + C.list[b1].name + ' are on speaking terms again', 4); }
     }
+    // migration: arrivals fill empty homes, pulled by jobs and good times; departures are pushed by smog, blackouts,
+    // lost jobs, a sour mood and glitches. The city can't hold more pixels than it has homes.
+    if (dayStart(k) >= MIG_START && w.staffD) {
+      if (!OP.staff0) OP.staff0 = w.staffD.slice();
+      const p2 = OP.pop.slice(), mon = OP.month;
+      for (let d = 0; d < C.D; d++) {
+        let m = 0, wsum = 0; for (const c of C.byDistrict[d]) { m += OP.mood[c.i] * c.size; wsum += c.size; } m = wsum ? m / wsum : 0.65;
+        const jobR = OP.staff0[d] > 0 ? w.staffD[d] / OP.staff0[d] : 1, smog = clamp((w.aqi - 80) / 120, 0, 1), dark = clamp((w.dark[d] || 0) / 6, 0, 1);
+        const leave = 0.00012 + 0.0006 * smog + 0.0005 * dark + 0.0008 * clamp(1 - jobR, 0, 1) + 0.0006 * clamp(0.6 - m, 0, 1) + 0.0004 * w.glitch[d];
+        const pull = clamp(jobR, 0, 1.3), come = (1 - p2[d]) * 0.004 * pull * pull * (w.conf / 100) + 0.00012;
+        const was = p2[d];
+        p2[d] = clamp(p2[d] + come - leave, 0.5, 1);
+        const res = C.districts[d].residents;
+        mon.left[d] += leave * was * res; mon.came[d] += (p2[d] - was + leave * was) * res;
+        if (p2[d] < 0.9 && !OP.exodus[d]) { OP.exodus[d] = 1; emit('society.exodus', 3, 'exodus:' + d + ':' + ymd(dayStart(k)), { district: C.districts[d].name, population: rd(p2[d] * 100, 1) }, 'A tenth of ' + C.districts[d].name + ' has moved away, and its senators are worried', 5); }
+        if (p2[d] > 0.97) OP.exodus[d] = 0;
+        if (was > 0.995 && jobR > 1.06 && k - (OP.full[d] || -999) > 120) { OP.full[d] = k; emit('society.full', 2, 'full:' + d + ':' + ymd(dayStart(k)), { district: C.districts[d].name }, C.districts[d].name + ' is full: pixels are arriving for the work, and there is nowhere left to live', 6); }
+      }
+      OP.pop = p2;
+      if (new Date(dayStart(k + 1)).getUTCDate() === 1) { // the month's moves
+        let left = 0, came = 0; for (let d = 0; d < C.D; d++) { left += mon.left[d]; came += mon.came[d]; }
+        let worst = 0; for (let d = 1; d < C.D; d++) if (mon.came[d] - mon.left[d] < mon.came[worst] - mon.left[worst]) worst = d;
+        const net = came - left;
+        emit('society.migration', Math.abs(net) > 600 ? 3 : 2, 'migration:' + ymd(dayStart(k + 1)), { arrived: Math.round(came), left: Math.round(left), worst: C.districts[worst].name },
+          Math.round(left).toLocaleString('en') + ' pixels left Pixel City last month and ' + Math.round(came).toLocaleString('en') + ' arrived' + (net < -200 ? '; ' + C.districts[worst].name + ' lost the most' : net > 200 ? '; the city is filling up' : ''), 7);
+        OP.month = { left: new Float64Array(C.D), came: new Float64Array(C.D) };
+      }
+    }
     // the day's record
     const poll = new Float32Array(C.D * 4), dmood = new Float32Array(C.D), wsum = new Float64Array(C.D);
     for (const c of C.list) { for (let j = 0; j < 4; j++) poll[c.d * 4 + j] += OP.lean[c.i * 4 + j] * c.size; dmood[c.d] += OP.mood[c.i] * c.size; wsum[c.d] += c.size; }
     for (let d = 0; d < C.D; d++) { for (let j = 0; j < 4; j++) poll[d * 4 + j] /= wsum[d]; dmood[d] /= wsum[d]; }
-    OP.days.push({ k, poll, mood: dmood, lean: Float32Array.from(OP.lean), cmood: Float32Array.from(OP.mood), hardship: Float32Array.from(hardship) });
+    OP.days.push({ k, pop: Float32Array.from(OP.pop), poll, mood: dmood, lean: Float32Array.from(OP.lean), cmood: Float32Array.from(OP.mood), hardship: Float32Array.from(hardship) });
     if (OP.days.length === 1) OP.basePoll = poll;
     OP.k = k + 1;
   }
@@ -338,6 +369,22 @@
     return clamp(1 + 1.6 * (ratio - 1), 0.45, 2);
   }
 
+  /** The share of a district's homes that are lived in, as of the close before t: 1 is a full district. */
+  function populationAt(d, t) {
+    if (!opinionsReady() || t < MIG_START + DAY) return 1;
+    const rec = opinionRecord(daysTo(t) - 1); return rec && rec.pop ? rec.pop[d] : 1;
+  }
+  /**
+   * For the Senate's elections: how much a sitting senator's local standing is worth, from whether their district has
+   * grown or emptied and how happy it is, a fortnight before polling day. 1 is no effect.
+   */
+  function incumbentFactor(districtName, day) {
+    if (!opinionsReady() || day < VOTES_FROM) return 1;
+    const C = communities(), d = C.districts.findIndex((x) => x.name === districtName); if (d < 0) return 1;
+    const rec = opinionRecord(daysTo(day - POLL_LAG)); if (!rec) return 1;
+    return clamp(1 + 1.0 * ((rec.pop ? rec.pop[d] : 1) - 1) + 0.6 * (rec.mood[d] - 0.65), 0.82, 1.18);
+  }
+
   // ================================================================ reading Society
   function fadView(f, C, k) {
     const c = COLOURS[f.item] || null;
@@ -352,7 +399,7 @@
     if (opinionsReady()) {
       const op = opinionRecord(k);
       const poll = (d) => { const o = {}; PIDS.forEach((p, j) => (o[p] = rd(op.poll[d * 4 + j] * 100, 10))); return o; };
-      out.districts = C.districts.map((D, d) => ({ id: d, name: D.name, mood: rd(op.mood[d] * 100, 1), hardship: rd(op.hardship[d] * 100, 1), poll: poll(d), base: (() => { const o = {}; PIDS.forEach((p, j) => (o[p] = rd(OP.basePoll[d * 4 + j] * 100, 10))); return o; })() }));
+      out.districts = C.districts.map((D, d) => ({ id: d, name: D.name, population: Math.round((op.pop ? op.pop[d] : 1) * D.residents), homesLivedIn: rd((op.pop ? op.pop[d] : 1) * 100, 10), mood: rd(op.mood[d] * 100, 1), hardship: rd(op.hardship[d] * 100, 1), poll: poll(d), base: (() => { const o = {}; PIDS.forEach((p, j) => (o[p] = rd(OP.basePoll[d * 4 + j] * 100, 10))); return o; })() }));
       let tot = 0; const city = { B: 0, V: 0, L: 0, I: 0 }; let m = 0;
       for (let d = 0; d < C.D; d++) { const w = C.districts[d].residents; tot += w; m += op.mood[d] * w; PIDS.forEach((p, j) => (city[p] += op.poll[d * 4 + j] * w)); }
       PIDS.forEach((p) => (city[p] = rd(city[p] / tot * 100, 10)));
@@ -449,6 +496,6 @@
   root.PixelUniverse.society = {
     version: VERSION, source: 'society', startDate: ymd(START), start: START, votesFrom: ymd(VOTES_FROM), ready, opinionsReady,
     stateAt, community, communitiesAt, pixelAt, eventsBetween, historyBetween,
-    productBoost, songFad, colourFad, voteSwing, INTERESTS: INTERESTS.map((x) => x.name), COLOURS: COLOURS.map((c) => ({ name: c[0], hex: c[1] }))
+    productBoost, songFad, colourFad, voteSwing, populationAt, incumbentFactor, migrationStart: ymd(MIG_START), INTERESTS: INTERESTS.map((x) => x.name), COLOURS: COLOURS.map((c) => ({ name: c[0], hex: c[1] }))
   };
 })(typeof window !== 'undefined' ? window : globalThis);

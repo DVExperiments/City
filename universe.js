@@ -376,12 +376,89 @@
       capacity: rd1(solar + wind + coalCap + MW.link + gasCap), temp: x.temp, windSpeed: x.wind };
   }
   /** Rolling blackouts: which districts go dark this hour, in a rota that changes each hour. */
+
+  // ================================================================ glitches
+  // From 1 March 2027 the city is subject to glitches: rare digital disasters. A district's textures corrupt, a refresh
+  // fails and the district goes dark, a palette bleeds into its neighbours, a frame sticks, memory leaks at the export
+  // dock. Storms make them three times likelier. Many spread to a neighbouring district, and some spread again.
+  // They depend only on the date, the weather and the map, so every system can read them: the grid (a refresh failure
+  // is a blackout), the Exchange (corrupted and frozen districts make less, patch shops are mobbed), freight (frozen
+  // districts get no deliveries, a leak loses raw colour), Society (pixels are rattled, and some leave), the map, the
+  // Daily Pixel and the Museum's Hall of Disasters.
+  const GLITCH_START = Date.UTC(2027, 2, 1);
+  let glitchMap = null;
+  const renewedMap = () => glitchMap || (glitchMap = renew(buildMap(senate().districtProfiles))); // the renewed city the glitches strike
+  const GLITCH = {
+    corruption: { label: 'Texture corruption', weight: 3, hours: [8, 40], spread: 0.35, prone: ['Dead Pixel', 'Null Pointer', 'Burn-In'] },
+    refresh: { label: 'Refresh failure', weight: 2, hours: [3, 14], spread: 0.4, prone: ['Vsync', 'Off-By-One'] },
+    bleed: { label: 'Palette bleed', weight: 2, hours: [12, 60], spread: 0.6, prone: ['Chroma', 'Dither', 'Gamma'] },
+    stuck: { label: 'Stuck frame', weight: 2, hours: [2, 10], spread: 0.2, prone: ['Vsync', 'Jaggy', 'Lossless'] },
+    leak: { label: 'Memory leak', weight: 1, hours: [10, 36], spread: 0, prone: [] }
+  };
+  const glitchDayCache = new Map();
+  function glitchesOnDay(d) { // glitches beginning on day d (chains included), in order
+    if (glitchDayCache.has(d)) return glitchDayCache.get(d);
+    const out = [];
+    if (d >= GLITCH_START && climate()) {
+      const m = renewedMap(), r = seeded('glitch:' + ymd(d)), wx = climate().dayAt(d) || {};
+      const storm = !!wx.storm || wx.cat === 'stormy';
+      const roll = r(), pickT = r(), pickD = r(), when = r(), len = r(), sev = r();
+      if (roll < (storm ? 3 : 1) / 40) {
+        const types = Object.keys(GLITCH); let tot = 0; for (const k of types) tot += GLITCH[k].weight;
+        let u = pickT * tot, type = types[0]; for (const k of types) { u -= GLITCH[k].weight; if (u < 0) { type = k; break; } }
+        const G = GLITCH[type];
+        let district;
+        if (type === 'leak') { const port = m.features.find((f) => f.type === 'port'); district = port ? port.district : 7; }
+        else { const ws = m.districts.map((x) => (G.prone.indexOf(x.name) >= 0 ? 3 : 1)); let wt = 0; for (const w of ws) wt += w; let v = pickD * wt; district = 0; for (let i = 0; i < ws.length; i++) { v -= ws[i]; if (v < 0) { district = i; break; } } }
+        let start = d + Math.floor(when * DAY), hours = G.hours[0] + Math.floor(len * (G.hours[1] - G.hours[0])), severity = 1 + Math.floor(sev * 3), hop = 0, from = null;
+        const seen = { [district]: true };
+        for (;;) {
+          const g = { id: 'glitch-' + ymd(d) + '-' + hop, type, label: G.label, district, districtName: m.districts[district].name, start, end: start + hours * H, hours, severity, storm, hop, from };
+          out.push(g);
+          // does it spread to a neighbour? the chance halves with every hop
+          const rs = seeded('glitchspread:' + g.id), go = rs(), pickN = rs(), delay = rs();
+          if (hop >= 3 || go >= G.spread / (1 << hop)) break;
+          const here = m.districts[district], near = m.districts.filter((x) => !seen[x.id] && (x.cx - here.cx) * (x.cx - here.cx) + (x.cy - here.cy) * (x.cy - here.cy) < 40 * 40);
+          if (!near.length) break;
+          const next = near[Math.floor(pickN * near.length)];
+          seen[next.id] = true; from = g.id; district = next.id; hop++;
+          start = start + Math.floor((0.2 + delay * 0.6) * hours * H); hours = Math.max(G.hours[0], Math.floor(hours * 0.75)); severity = Math.max(1, severity - (delay < 0.5 ? 1 : 0));
+        }
+      }
+    }
+    glitchDayCache.set(d, out);
+    if (glitchDayCache.size > 400) glitchDayCache.delete(glitchDayCache.keys().next().value);
+    return out;
+  }
+  /** Every glitch overlapping [from, to). */
+  function glitchesBetween(from, to) {
+    const out = [];
+    for (let d = dayOf(from) - 6 * DAY; d < to; d += DAY) for (const g of glitchesOnDay(d)) if (g.end > from && g.start < to) out.push(g);
+    return out;
+  }
+  const glitchesAt = (t) => glitchesBetween(t, t + 1);
+  function glitchEvents(from, to) {
+    const out = [], m = renewedMap();
+    const what = { corruption: (n) => 'Textures corrupt across ' + n + ': buildings render as noise, and nobody can find the shops', refresh: (n) => 'A refresh failure blacks out ' + n, bleed: (n) => n + '\u2019s palette bleeds across its borders, and the colours will not stay where they belong',
+      stuck: (n) => n + ' freezes on a stuck frame: nothing moves, and nobody inside has noticed', leak: () => 'A memory leak at the export dock eats into the raw colour in store' };
+    for (const g of glitchesBetween(from - 4 * DAY, to)) {
+      if (g.start >= from && g.start < to) out.push({ id: 'city:' + g.id + ':start', time: iso(g.start), ms: g.start, source: 'city', type: g.hop ? 'glitch.spread' : 'glitch.start', importance: g.hop ? 3 : 4,
+        data: { glitch: g.id, type: g.type, label: g.label, district: g.districtName, severity: g.severity, hours: g.hours, from: g.from, storm: g.storm },
+        headline: g.hop ? 'The ' + g.label.toLowerCase() + ' spreads to ' + g.districtName : what[g.type](g.districtName) + (g.storm ? ', in the storm' : '') });
+      if (g.end >= from && g.end < to) out.push({ id: 'city:' + g.id + ':end', time: iso(g.end), ms: g.end, source: 'city', type: 'glitch.end', importance: 2,
+        data: { glitch: g.id, type: g.type, district: g.districtName, hours: g.hours }, headline: g.districtName + ' is restored after ' + g.hours + ' hours of ' + g.label.toLowerCase() });
+    }
+    return out;
+  }
+
   function blackoutDistricts(map, shortfall, t) {
-    if (shortfall <= 0) return [];
+    const failed = t >= GLITCH_START ? glitchesAt(t).filter((g) => g.type === 'refresh').map((g) => g.district) : [];
+    if (shortfall <= 0) return failed.sort((a, b) => a - b);
     const per = 250 / 16;
     const n = clamp(Math.floor(shortfall / per) + 1, 1, 16);
     const order = map.districts.map((d) => d.id).sort((a, b) => unit('rota:' + Math.floor(t / H) + ':' + a) - unit('rota:' + Math.floor(t / H) + ':' + b) || a - b);
-    return order.slice(0, n).sort((a, b) => a - b);
+    const out = order.slice(0, n); for (const d of failed) if (out.indexOf(d) < 0) out.push(d);
+    return out.sort((a, b) => a - b);
   }
 
   // ================================================================ shipping
@@ -574,7 +651,7 @@
       ensure(today);
       const scratch = JSON.parse(JSON.stringify({ day: hist.day, smog: hist.smog, peak: hist.peak, smogAlert: hist.smogAlert })), partial = [];
       processDay(scratch, today, partial);
-      return hist.events.filter((e) => e.ms >= from && e.ms < today).concat(partial.filter((e) => e.ms >= from && e.ms <= to)).sort((a, b) => a.ms - b.ms);
+      return hist.events.filter((e) => e.ms >= from && e.ms < today).concat(partial.filter((e) => e.ms >= from && e.ms <= to)).concat(glitchEvents(from, to)).sort((a, b) => a.ms - b.ms);
     }
     function historyBetween(from, to) {
       if (!ready()) return [];
@@ -598,6 +675,7 @@
       return { time: t, started: true, version: VERSION, grid: g, dark, ops, levels, sites, today, residents: m.residents, aqi: smog, air: aqiBand(smog), ships: shipsAt(t) };
     }
     return {
+      glitchesBetween: (from, to) => (ready() ? glitchesBetween(from, to) : []), glitchesAt: (t) => (ready() ? glitchesAt(t) : []), glitchStart: GLITCH_START, GLITCH,
       version: VERSION, source: 'city', startDate: ymd(EPOCH), epoch: EPOCH, ready,
       // map(): the founding map (unchanged, for sites whose history depends on it). map(t): the map in force at t.
       map: (t) => (!ready() ? null : t === undefined ? ensureMap() : mapAt(t)), T, TILE_NAMES, RESIDENTS, JOBS, MW,

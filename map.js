@@ -954,6 +954,29 @@
         ctx.fillRect(cxp, cyp, pw, ph);
       }
       drawPeople(t, light);
+      // glitches (City): drawn while they last
+      if (C.glitchesAt) for (const g of C.glitchesAt(t)) {
+        const L = look[g.district]; if (!L) continue;
+        const beat = Math.floor(now / 110);
+        for (const y in L.rows) {
+          const yy = +y; if (yy < vy - 1 || yy > vy + ch / z + 1) continue;
+          for (const xx of L.rows[y]) {
+            if (xx < vx - 1 || xx > vx + cw / z + 1) continue;
+            const i = yy * map.W + xx, v = h32(i * 7 + beat);
+            if (g.type === 'corruption') { // textures come apart: noise and missing-texture checkers, flickering
+              if (v < 0.12 * g.severity) { ctx.fillStyle = v < 0.04 ? '#FF00D4' : v < 0.08 ? '#000000' : pick(PAL.neon, h32(i + beat)); const q = z / 2; ctx.fillRect(sx(xx) + (v * 97 % 1 < 0.5 ? 0 : q), sy(yy) + (v * 53 % 1 < 0.5 ? 0 : q), q, q); }
+            } else if (g.type === 'bleed') { // the district's colour runs across everything, and a little past the border
+              if (v < 0.5) { ctx.fillStyle = rgba(L.accent, 0.12 + 0.1 * g.severity * v); ctx.fillRect(sx(xx - (v < 0.1 ? 1 : 0)), sy(yy), z * (v < 0.1 ? 2 : 1), z); }
+            } else if (g.type === 'stuck') { // frozen: a still, slightly blue frame with tear lines through it
+              ctx.fillStyle = 'rgba(70,120,255,0.12)'; ctx.fillRect(sx(xx), sy(yy), z, z);
+              if (yy % 5 === 0) { ctx.fillStyle = 'rgba(200,230,255,0.35)'; ctx.fillRect(sx(xx), sy(yy) + z * 0.4, z, Math.max(1, z * 0.08)); }
+            } else if (g.type === 'refresh') { // no signal: static over the dark
+              if (v < 0.25) { ctx.fillStyle = v < 0.12 ? 'rgba(220,225,235,0.25)' : 'rgba(0,0,0,0.4)'; ctx.fillRect(sx(xx) + (v * 4 % 1) * z, sy(yy), Math.max(1, z * 0.3), Math.max(1, z * 0.15)); }
+            } else if (g.type === 'leak' && v < 0.06) { ctx.fillStyle = 'rgba(70,214,255,0.6)'; ctx.fillRect(sx(xx), sy(yy), z * 0.5, z * 0.5); }
+          }
+        }
+        if (g.type === 'refresh' && z < 20) { ctx.textAlign = 'center'; ctx.font = '800 ' + Math.max(12, z * 1.6) + 'px "Bricolage Grotesque", system-ui, sans-serif'; ctx.fillStyle = 'rgba(243,246,247,0.85)'; ctx.fillText('NO SIGNAL', sx(map.districts[g.district].cx + 0.5), sy(map.districts[g.district].cy + 2.5)); }
+      }
       if (x.cloud > 0.35 && !reduce) {
         const east = -Math.sin(x.dir * Math.PI / 180), north = Math.cos(x.dir * Math.PI / 180), drift = (now / 1000) * x.wind * 0.02;
         ctx.fillStyle = 'rgba(2,6,14,' + ((x.cloud - 0.35) * 0.22).toFixed(3) + ')';

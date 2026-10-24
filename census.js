@@ -58,7 +58,7 @@
   // Working lives depend on the Exchange (which businesses are trading, and how many staff they keep), so from the
   // start of working lives it is a hard dependency. Its register of businesses (employers()) does not depend on it.
   const COM = () => U().commerce;
-  const fullReady = () => ready() && !!(COM() && COM().ready());
+  const fullReady = () => ready() && !!(COM() && COM().ready()) && !!U().society;
 
   // ---------------------------------------------------------------- names and character
   const FIRST = ['Ada', 'Amber', 'Arlo', 'Ash', 'Bea', 'Bit', 'Blue', 'Bram', 'Cass', 'Cyan', 'Dot', 'Edie', 'Ember', 'Fen', 'Flint', 'Glint', 'Gray', 'Halo', 'Hex', 'Ines',
@@ -649,8 +649,16 @@
   }
 
   // ================================================================ people at a moment
+  // Migration (Pixel City Society, from 1 March 2027): when pixels leave a district, homes stand empty. Which homes is
+  // drawn afresh for each household, so when the district fills again it is with new arrivals.
+  function vacantAt(hi, k, t) {
+    const S = U().society; if (!S || !S.populationAt || t < LIFE_START) return false;
+    const home = homes()[hi], p = S.populationAt(home.district, t);
+    return p < 1 && seeded('migration:' + hi + ':' + k)() < 1 - p;
+  }
   function residentsOfHome(hi, t) {
     const ten = tenancyAt(hi, t), hh = household(hi, ten.k);
+    if (vacantAt(hi, ten.k, t)) return Object.assign({}, hh, { members: [], vacant: true });
     return t < LIFE_START ? hh : Object.assign({}, hh, { members: membersAt(hi, ten.k, t) });
   }
   /** A full profile at time t. Residents who have moved away are still on file, marked as gone. */
