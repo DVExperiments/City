@@ -335,7 +335,7 @@
     const rec = opinionRecord(daysTo(day - POLL_LAG)); if (!rec || !OP.basePoll) return 1;
     const j = PIDS.indexOf(party); if (j < 0) return 1;
     const ratio = rec.poll[d * 4 + j] / OP.basePoll[d * 4 + j];
-    return clamp(1 + 0.8 * (ratio - 1), 0.7, 1.4);
+    return clamp(1 + 1.6 * (ratio - 1), 0.45, 2);
   }
 
   // ================================================================ reading Society

@@ -577,6 +577,13 @@
             ['#FF3355', '#2BFF88', '#3D8BFF', '#B9C3CA'].forEach((c, k) => { px(X + bw + 4, Y + 10 + k * 16, 1, 10, '#9FB4C8'); px(X + bw + 5, Y + 10 + k * 16, 5, 4, c); });
             break;
           }
+          case 'bank': { // the Bank of Pixel City: a vault door between gold columns
+            slab(X + 2, Y + 3, W - 4, HH - 6, '#14121C', '#F2C230');
+            for (let k = 0; k < 6; k++) { px(X + 6 + k * 13, Y + 8, 4, HH - 18, '#B08D2C'); px(X + 6 + k * 13, Y + 8, 4, 1, '#FFE07A'); }
+            disc(X + W / 2, Y + HH / 2, 12, '#6E5A1E'); disc(X + W / 2, Y + HH / 2, 10, '#2A2418'); ring(X + W / 2, Y + HH / 2, 8, '#F2C230');
+            px(X + W / 2 - 6, Y + HH / 2, 12, 1, '#F2C230'); px(X + W / 2, Y + HH / 2 - 6, 1, 12, '#F2C230'); disc(X + W / 2, Y + HH / 2, 2, '#FFE07A');
+            break;
+          }
           case 'jobs': {
             // the Job Centre: a plain office, a noticeboard of vacancy cards on the wall, and a rail for the queue
             slab(X + 3, Y + 3, W - 6, HH - 12, '#121A26', '#9FB4C8');

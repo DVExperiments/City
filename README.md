@@ -94,3 +94,5 @@ Each pixel has a social life too: their communities, up to five friends who shar
 `PixelUniverse.society`: `stateAt(t)`, `community(id, t)`, `communitiesAt(t)`, `pixelAt(id, t)`, `eventsBetween` (source `society`: `fad.start`, `fad.everywhere`, `society.turns`, `society.reconciled`), `historyBetween`, and the hooks `productBoost`, `songFad`, `colourFad`, `voteSwing`.
 
 **The loop.** The Senate reads Society; Society reads the city and the Exchange; the city reads the Senate. It is allowed because every link looks back: elections read Society a fortnight late, Society reads the day before, and no run ever reads ahead of the day it is on. Every page that loads the Senate must therefore load, in order: Weather, Senate, City's universe.js, census.js, the Exchange, then society.js.
+
+The Bank of Pixel City's plot opens at 8:30am city time on 1 February 2027 and links to the Bank's site. Its books are kept by the Exchange.
