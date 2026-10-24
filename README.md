@@ -81,3 +81,16 @@ Add `?at=` to watch any moment: `index.html?at=2028-06-20T19:30` for a blackout 
 ## Next: phase 2
 
 The Ecosystem takes over the air, adds wildlife, and the Senate starts reading yesterday's city (smog and blackouts) in place of its air-quality stub. That closes the world loop.
+
+## Society (society.js, society.html)
+
+Pixel City Society begins with the December Grand Prix (1 December 2026). Every adult pixel belongs to one to three communities, twelve kinds in each district (the Signal Choir of Vsync, the Glitch Spotters of Moiré, the Bezel Gardeners of Bezel, 192 in all). Communities hear from the rest of their district, from the same kind of community elsewhere, and from the districts next door. Two things spread through them, in two separate runs so nothing goes round in a circle within a day:
+
+- **Tastes**: crazes for colours, Pixel FM songs and kinds of shop start in a community that likes new things, spread, peak and wear off. A colour craze gets the Senate debating the city's colours (it drafts more colour bills, shifting hue towards the craze); a song craze gets requested on Pixel FM (it reaches the chart); a shop craze sends a district's pixels to that kind of shop (the Exchange's demand). The tastes run reads only the map and the Weather Bureau.
+- **Opinions**: each community leans towards Brightness, Verdant, Legacy Mode or an independent, and moves with its friends and with what happened to its district the day before: smog (towards Verdant), blackouts and good times (Brightness), prices and empty shelves (Legacy Mode), businesses closing (against everyone). Each kind of community feels what it cares about most. A community that changes its allegiance falls out with the biggest neighbour still holding to the old one. **From the May 2027 general election, the Senate's elections follow each district's leanings a fortnight before polling day.**
+
+Each pixel has a social life too: their communities, up to five friends who share one, a rival nearby who leans the other way, the crazes they've taken up, and a leaning their friends can bring round.
+
+`PixelUniverse.society`: `stateAt(t)`, `community(id, t)`, `communitiesAt(t)`, `pixelAt(id, t)`, `eventsBetween` (source `society`: `fad.start`, `fad.everywhere`, `society.turns`, `society.reconciled`), `historyBetween`, and the hooks `productBoost`, `songFad`, `colourFad`, `voteSwing`.
+
+**The loop.** The Senate reads Society; Society reads the city and the Exchange; the city reads the Senate. It is allowed because every link looks back: elections read Society a fortnight late, Society reads the day before, and no run ever reads ahead of the day it is on. Every page that loads the Senate must therefore load, in order: Weather, Senate, City's universe.js, census.js, the Exchange, then society.js.

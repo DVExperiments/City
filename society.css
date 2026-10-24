@@ -1,0 +1,17 @@
+/* Pixel City Society: crazes, leanings and communities, on City's styles. */
+.fads { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px 22px; }
+.fad { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+.fad b { display: block; font-weight: 600; }
+.fad .muted { display: block; font-size: 0.88rem; }
+.fad .share { font: 700 1.25rem/1 var(--display); }
+.sw { display: inline-block; width: 22px; height: 22px; background: var(--c, var(--ink)); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2); margin-right: 6px; vertical-align: -5px; }
+.sw-song { background: repeating-linear-gradient(90deg, #9BE22D 0 3px, transparent 3px 5px); }
+.sw-product { background: linear-gradient(90deg, #FF3355 33%, #2BFF88 33% 66%, #3D8BFF 66%); }
+.spread { display: flex; gap: 2px; margin-top: 6px; }
+.spread i { width: 9px; height: 9px; background: var(--ink); }
+.stack { display: flex; width: 160px; height: 10px; background: var(--line-soft); }
+.stack i { display: block; height: 100%; }
+.data small.up { color: #1E8F5A; } .data small.down { color: #C2333A; }
+.data .warn { color: #B4600F; font-weight: 600; }
+.clist { line-height: 1.9; }
+.hint { color: var(--muted); }
