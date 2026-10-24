@@ -13,6 +13,7 @@ Every file sits at the top level.
 | `universe.js` | The simulation: map, construction, power grid and pollution. No DOM code. |
 | `index.html` | The site. |
 | `city.css` | Styles, built on Glacial's. |
+| `look.js` | How the city looks: each district's colour, physics and industry, and the city's names for its ground. Display only. |
 | `map.js` | The pan-and-zoom map, painted as pixel art at 16 pixels per block and repainted only when something changes. Display only. |
 | `city.js` | Pages, live updates and routing. |
 | `test.html` | Self-checks and a year-by-year report. |
@@ -36,6 +37,12 @@ If either fails to load, the city refuses to run (`ready()` returns false) rathe
 Landmarks link to the other sites: the Senate House, the Glacial Stadium (where a race is always on), the Weather Bureau Tower, and the Bookmaker and Newspaper Office, which open later. There are also the Port and the Harbour Gas Station.
 
 46 reserved sites are built, or not, by Senate law: six coal plants, five solar farms, five wind farms, twenty parks and ten wildlife zones. When a law raises a level, work begins the next day and the site opens after a build time (coal 30 days, wind 14, solar 10, parks 5, wildlife zones 3). When a law lowers it, the site is cleared over five days.
+
+## How it's drawn (City v3)
+
+The city is drawn as a digital landscape. Main roads are data buses with a node at every junction, streets are signal traces, the river is a data stream, the forest is a noise field, gardens are colour growth, the coast is the frame border and the sea is the blank margin. Industry is render plants, texture foundries, palette refineries, compression facilities and signal processing yards. Each district behaves like the pixel it is named after. See `CITY_V3.md` for the full visual language.
+
+This is display only: `universe.js`, the map layout and every past result are unchanged.
 
 ## The grid
 

@@ -228,13 +228,14 @@ table.data { width: 100%; border-collapse: collapse; font-size: 0.97rem; }
 
 /* ---------- the map ---------- */
 .mapwrap { position: relative; }
-.citymap { display: block; width: 100%; height: min(72vh, 680px); border-radius: 6px; background: #1E4A66; touch-action: none; cursor: grab; }
-.screen .citymap { aspect-ratio: auto; }
+.screen.mapwrap { background: #070C16; box-shadow: inset 0 0 0 1px rgba(70,214,255,0.18), 0 0 0 1px rgba(70,214,255,0.06), 0 10px 40px -18px rgba(70,214,255,0.35); }
+.citymap { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; max-height: 86vh; border-radius: 6px; background: #03060D; touch-action: none; cursor: grab; }
+.screen .citymap { aspect-ratio: 4 / 3; }
 .mapctl { position: absolute; top: 20px; right: 20px; display: flex; gap: 6px; }
-.mapctl button { font: 600 0.92rem/1 var(--body); color: #E1E9EC; background: rgba(14,23,28,0.82); border: 1px solid rgba(255,255,255,0.18); border-radius: 4px; padding: 8px 11px; cursor: pointer; min-width: 36px; }
-.mapctl button:hover { background: rgba(14,23,28,0.95); }
+.mapctl button { font: 600 0.92rem/1 var(--body); color: #E1F7FF; background: rgba(3,6,13,0.85); border: 1px solid rgba(70,214,255,0.35); border-radius: 4px; padding: 8px 11px; cursor: pointer; min-width: 36px; }
+.mapctl button:hover { background: rgba(3,6,13,0.95); border-color: rgba(70,214,255,0.7); }
 .mapctl button[aria-pressed="false"] { opacity: 0.6; }
-@media (max-width: 600px) { .citymap { height: 62vh; } .mapctl { top: 12px; right: 12px; } .mapctl #zfit { display: none; } }
+@media (max-width: 600px) { .citymap { aspect-ratio: auto; height: 62vh; } .mapctl { top: 12px; right: 12px; } .mapctl #zfit { display: none; } }
 
 /* ---------- calls to action and selection ---------- */
 .cta { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; padding: 11px 18px; border-radius: 4px; background: var(--link); color: #fff; font: 600 1rem/1 var(--body); text-decoration: none; box-shadow: 0 1px 0 rgba(0,0,0,0.15); }

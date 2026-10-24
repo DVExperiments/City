@@ -49,6 +49,9 @@
   }
   const PARTY = { B: ['Brightness', '#E8A33D'], V: ['Verdant', '#3FA66A'], L: ['Legacy Mode', '#8C9AA6'], I: ['Independent', '#B79AE0'] };
   const senLink = (p) => '<span class="px"><span class="chip" style="--c:' + PARTY[p.party][1] + '"></span><a href="' + SENATE_URL + '#/senator/' + p.id + '">' + esc(p.name) + '</a></span>';
+  const LOOK = window.CityLook;
+  const tileName = (k) => (LOOK ? LOOK.tileName(k, C.TILE_NAMES[k]) : C.TILE_NAMES[k]);
+  const blurb = (d) => (LOOK ? LOOK.theme(d.name, d.id).blurb : '');
   function character(d) {
     return (d.env < -0.2 ? 'Industrial' : d.env > 0.2 ? 'Green' : 'Mixed') + ', ' + (d.aes > 0.25 ? 'modern' : d.aes < -0.25 ? 'traditional' : 'unremarkable');
   }
@@ -85,7 +88,7 @@
         const sens = senatorsFor(d.name), dk = monthStats(now());
         const parks = st.sites.filter((x) => x.type === 'park' && x.state === 'operating' && map.features[x.id].district === d.id).length;
         const here = map.features.filter((f) => f.district === d.id && (f.kind === 'landmark' || (st.sites[map.features.filter((g) => g.kind === 'site' && g.id < f.id).length] || {}).state === 'operating'));
-        return '<p class="lede" style="font-size:1rem">A ' + character(d).toLowerCase() + ' district.</p>' +
+        return '<p class="lede" style="font-size:1rem">A ' + character(d).toLowerCase() + ' district.</p>' + (blurb(d) ? '<p>' + esc(blurb(d)) + '</p>' : '') +
           '<dl class="facts" style="grid-template-columns:1fr 1fr 1fr">' + fact('Residents', d.residents.toLocaleString()) + fact('Jobs', d.jobs.toLocaleString()) +
           fact('Power', st.dark.indexOf(d.id) >= 0 ? '<span class="miss">Off</span>' : 'On') + fact('Blackouts', (dk[d.id] || 0) + ' h', 'last 30 days') + fact('Parks open', parks) + fact('Area', d.tiles + ' blocks') + '</dl>' +
           '<p style="margin-top:14px"><b>Senators:</b> ' + (sens.length ? sens.map(senLink).join(', ') : '<span class="muted">not yet elected</span>') + '</p>' +
@@ -158,7 +161,7 @@
           const d = map.districts[sel.district];
           title = esc(d.name);
           html = districtCard(d);
-        } else { title = 'The sea'; html = '<p class="muted">Nothing here but water.</p>'; }
+        } else { title = 'The blank margin'; html = '<p class="muted">Beyond the frame border, nothing has been drawn. Ships cross it on their way in and out of the port.</p>'; }
         set('selTitle', title);
         set('selection', html);
       }
@@ -207,7 +210,7 @@
         return '<tr>' + td(link('district/' + d.id, '<b>' + esc(d.name) + '</b>')) + td(character(d)) + td(d.residents.toLocaleString(), 1) + td(d.jobs.toLocaleString(), 1) + td(parks, 1) +
           td((dark[d.id] || 0) + ' h', 1) + '<td>' + (sens.length ? sens.map(senLink).join(', ') : '<span class="muted">Not yet elected</span>') + '</td></tr>';
       });
-      return head('Districts', 'Sixteen districts, each electing three senators. Their character comes from the people who live there: industrial districts have factories, green ones have gardens.') +
+      return head('Districts', 'Sixteen districts, each electing three senators. Their character comes from the people who live there: industrial districts have render plants and foundries, green ones have colour growth. Each one also behaves like the pixel it is named after.') +
         table([{ l: 'District' }, { l: 'Character' }, { l: 'Residents', n: 1 }, { l: 'Jobs', n: 1 }, { l: 'Parks', n: 1 }, { l: 'Blackouts, last 30 days', n: 1 }, { l: 'Senators' }], rows);
     }
   };
@@ -219,7 +222,7 @@
       const t = now(), st = C.stateAt(t), dark = monthStats(t);
       const sens = senatorsFor(d.name);
       const uses = Object.keys(d.uses).map(Number).filter((k) => C.TILE_NAMES[k] && k !== 17 && k !== 18).sort((a, b) => d.uses[b] - d.uses[a]).slice(0, 7)
-        .map((k) => '<tr>' + td(esc(C.TILE_NAMES[k])) + td(Math.round(d.uses[k] / d.tiles * 100) + '%', 1) + '</tr>');
+        .map((k) => '<tr>' + td(esc(tileName(k))) + td(Math.round(d.uses[k] / d.tiles * 100) + '%', 1) + '</tr>');
       const feats = map.features.filter((f) => f.district === d.id).map((f) => {
         const s = f.kind === 'site' ? C.siteStateAt(f.id, t) : null;
         return '<tr>' + td(esc(f.name)) + td(f.kind === 'site' ? KIND[f.type] : 'Landmark') + td(s ? STATE[s.state] : 'Open') + '</tr>';
@@ -227,6 +230,7 @@
       const news = C.eventsBetween(t - 120 * DAY, t).filter((e) => (e.data.districts && e.data.districts.indexOf(d.id) >= 0) || (e.data.site !== undefined && map.features[e.data.site].district === d.id)).reverse().slice(0, 12)
         .map((e) => '<li><time>' + esc(fShort.format(e.ms)) + '</time><span>' + esc(e.headline) + '</span></li>').join('');
       return head(esc(d.name), character(d) + '. ' + d.residents.toLocaleString() + ' residents and ' + d.jobs.toLocaleString() + ' jobs.', 'District') +
+        (blurb(d) ? '<p class="prose" style="max-width:40em">' + esc(blurb(d)) + '</p>' : '') +
         '<dl class="facts">' + fact('Residents', d.residents.toLocaleString()) + fact('Jobs', d.jobs.toLocaleString()) + fact('Area', d.tiles + ' blocks') +
         fact('Power now', st.dark.indexOf(d.id) >= 0 ? '<span class="miss">Off</span>' : 'On') + fact('Blackouts, last 30 days', (dark[d.id] || 0) + ' h') +
         fact('Senators', sens.length ? sens.map(senLink).join('<br>') : 'Not yet elected') + '</dl>' +
@@ -311,6 +315,7 @@
         '<div class="prose"><p>Pixel City is computed in your browser from the date, like every part of the Pixel Universe. Nothing is stored, and every visitor sees the same city at the same moment.</p>' +
         '<p>The city follows the weather and the laws of the Pixel Senate. When the Senate commissions a wind farm, work begins the next day and the turbines start turning about a fortnight later. Retire coal too quickly, and on a calm winter evening the lights go out.</p>' +
         '<p>Every building, road and district was laid out once and will not move. What changes is what gets built on the reserved sites, the power on the grid, the traffic and the air.</p>' +
+        '<p>The city is drawn as what it is: a place on a screen. The main roads are data buses and the streets are signal traces. The river is a data stream, the western forest is a noise field, and the gardens are colour growth. The coast is the frame border, and the sea beyond it is the blank margin, where nothing has been drawn. Each district behaves like the pixel it is named after: Dither is dithered, Moir\u00e9 has interference rings, and parts of Null Pointer refer to textures that do not exist.</p>' +
         '<p>All times are city time, which is UTC.</p></div>';
     }
   };
