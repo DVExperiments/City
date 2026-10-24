@@ -19,7 +19,7 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '0.1.0';
+  const VERSION = '0.2.0';
   const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const YEAR = 31557600000; // 365.25 days
   const EPOCH = Date.UTC(2025, 11, 3);
@@ -55,6 +55,10 @@
   const U = () => root.PixelUniverse || {};
   const C = () => U().city;
   const ready = () => { const c = C(); return !!(c && (!c.ready || c.ready())); };
+  // Working lives depend on the Exchange (which businesses are trading, and how many staff they keep), so from the
+  // start of working lives it is a hard dependency. Its register of businesses (employers()) does not depend on it.
+  const COM = () => U().commerce;
+  const fullReady = () => ready() && !!(COM() && COM().ready());
 
   // ---------------------------------------------------------------- names and character
   const FIRST = ['Ada', 'Amber', 'Arlo', 'Ash', 'Bea', 'Bit', 'Blue', 'Bram', 'Cass', 'Cyan', 'Dot', 'Edie', 'Ember', 'Fen', 'Flint', 'Glint', 'Gray', 'Halo', 'Hex', 'Ines',
@@ -85,7 +89,7 @@
     'To sit in the Senate one day', 'To win big at the Bookmaker, once', 'To see the last coal plant switched off', 'To keep the coal plants open for the next generation', 'To have a song played on Pixel FM',
     'To see a whole year without a blackout', 'For the children to do better than them', 'To learn to sleep as well as Dead Pixel', 'A quiet life', 'To finally visit Dither district', 'To meet Lossless in person',
     'To grow the tallest sunflower in the city', 'To be on time for something', 'To get to the end of the Daily Crawl awake', 'To be the first in the family to go to university'];
-  const JOBS = ['body text hue controller', 'kerning inspector', 'senior gradient technician', 'coal plant stoker', 'solar panel polisher', 'harbour pilot', 'stadium groundskeeper', 'weather balloon handler',
+  const JOBS = ['body text hue controller', 'kerning inspector', 'senior gradient technician', 'coal plant stoker', 'solar panel polisher', 'margin pilot', 'stadium groundskeeper', 'weather balloon handler',
     'night-shift bookmaker', 'newsprint folder', 'turbine climber', 'Senate stenographer', 'pixel-edge sharpener', 'traffic light timer', 'lighthouse keeper', 'subpixel alignment officer',
     'colour temperature adjuster', 'anti-glare consultant', 'refresh rate auditor', 'shade allocator', 'museum conservator', 'radio presenter', 'school crossing patrol', 'park keeper'];
   const QUIRKS = ['Has never once been fully charged', 'Keeps a spare pixel in a drawer, just in case', 'Refuses to dim after dark', 'Names every pigeon in the street', 'Has read the Senate standing orders twice',
@@ -419,10 +423,10 @@
   const JOB_CENTRE_OPENS = Date.UTC(2026, 11, 6, 20, 30); // 8:30am, Monday 7 December, city time
   const SECTOR = {
     office: { label: 'Offices', wage: 640, titles: ['body text hue controller', 'kerning inspector', 'senior gradient technician', 'subpixel alignment officer', 'refresh rate auditor', 'colour temperature adjuster', 'anti-glare consultant', 'shade allocator', 'font licensing clerk', 'accounts clerk (watts)'] },
-    shop: { label: 'Shops', wage: 430, titles: ['shop assistant', 'cashier', 'window dresser', 'barista', 'florist', 'shelf stacker'] },
-    factory: { label: 'Factories', wage: 540, titles: ['diode assembler', 'phosphor mixer', 'line supervisor', 'brightness quality inspector', 'machine minder'] },
-    warehouse: { label: 'Warehouses', wage: 480, titles: ['stock picker', 'dispatch clerk', 'forklift driver', 'night watch'] },
-    port: { label: 'The port', wage: 580, titles: ['stevedore', 'crane operator', 'harbour pilot', 'line handler'] },
+    shop: { label: 'Shops', wage: 430, titles: ['counter pixel', 'till operator', 'display arranger', 'charge pourer', 'palette mixer', 'cache stacker'] },
+    factory: { label: 'Industry', wage: 540, titles: ['palette refiner', 'texture caster', 'render operator', 'codec compressor', 'line supervisor'] },
+    warehouse: { label: 'Caches and haulage', wage: 480, titles: ['packet picker', 'dispatch clerk', 'byte lifter', 'night watch'] },
+    port: { label: 'The export buffer', wage: 580, titles: ['buffer handler', 'export crane operator', 'margin pilot', 'line handler'] },
     energy: { label: 'Power', wage: 660, titles: ['coal plant stoker', 'boiler engineer', 'control room operator', 'solar panel polisher', 'turbine climber', 'inverter technician'] },
     parks: { label: 'Parks and wildlife', wage: 470, titles: ['park keeper', 'gardener', 'ranger'] },
     building: { label: 'Construction', wage: 560, titles: ['construction worker', 'site foreman', 'crane operator'] },
@@ -446,9 +450,10 @@
   };
   const SITE_JOBS = { coal: 110, solar: 12, wind: 10, park: 4, wildlife: 3 };
   const BIZ_A = ['Halftone', 'Gridley', 'Kerning', 'Lumen', 'Raster', 'Gamut', 'Pica', 'Serif', 'Vector', 'Glyph', 'Phosphor', 'Contrast', 'Aperture', 'Prism', 'Bitwell', 'Dotson', 'Inkwell', 'Scanlon'];
-  const BIZ_B = { office: ['Typesetting', 'Colour Consultants', 'Gradient Partners', 'Alignment Bureau', 'Refresh Services', 'Font Licensing', '& Associates', 'Brightness Advisory'],
-    shop: ['Pixel Pantry', 'Corner Store', 'Florist', 'Coffee', 'Hardware', 'Bakery', 'News & Sweets'], factory: ['Diode Works', 'Phosphor Mills', 'Screen Works', 'Glass & Light'],
-    warehouse: ['Storage', 'Freight', 'Distribution'], port: ['Stevedores'] };
+  // what the city's businesses make and sell: the things pixels use, need and want (the Exchange trades them)
+  const BIZ_B = { office: ['Typesetting', 'Colour Consultants', 'Gradient Partners', 'Alignment Bureau', 'Refresh Services', 'Font Licensing', 'Calibration Services', 'Brightness Advisory'],
+    shop: ['Refresh Pantry', 'Cache & Carry', 'Palette Shop', 'Charge Bar', 'Patch Shop', 'Shader Parlour', 'Signal Kiosk'], factory: ['Texture Foundry', 'Palette Refinery', 'Render Plant', 'Compression Works'],
+    warehouse: ['Cache', 'Packet Haulage', 'Data Distribution'], port: ['Buffer Handlers'] };
 
   let EMP = null;
   function employers() {
@@ -461,7 +466,7 @@
       if (!kind || d < 0 || m.owner[i] >= 0) continue;
       const r = seeded('employer:' + i), x = i % m.W, y = Math.floor(i / m.W);
       EMP.push({ id: 'b' + i, kind: 'business', sector: kind, district: d, x, y, capacity: JOBS[m.tiles[i]],
-        name: kind === 'shop' ? pick(r, FIRST) + '’s ' + pick(r, BIZ_B.shop) : pick(r, BIZ_A) + ' ' + pick(r, BIZ_B[kind]), titles: SECTOR[kind].titles });
+        name: pick(r, BIZ_A) + ' ' + pick(r, BIZ_B[kind]), titles: SECTOR[kind].titles });
     }
     for (const f of m.features) {
       if (f.kind === 'landmark' && INSTITUTIONS[f.type]) {
@@ -477,7 +482,7 @@
     return EMP;
   }
   function operating(e, t) {
-    if (e.kind === 'business') return true;
+    if (e.kind === 'business') return t < LIFE_START || COM().openAt(e.id, t);
     const C0 = C();
     if (e.kind === 'institution') { if (e.feature.type === 'jobs' && t < JOB_CENTRE_OPENS) return false; return !(C0.isPlanned && C0.isPlanned(e.feature, t)); }
     const st = C0.siteStateAt(e.feature.id, t).state;
@@ -489,9 +494,12 @@
     if (openCache.has(n)) return openCache.get(n);
     const t = LIFE_START + Math.floor(n * MONTH) + DAY;
     const all = { list: [], cum: [], total: 0 }, by = renewedMap().districts.map(() => ({ list: [], cum: [], total: 0 }));
+    // a business hires in proportion to the staff it wants: a busy one more than its premises' usual share, a quiet one less
+    const want = t >= LIFE_START ? COM().staffAt(t) : null;
     for (const e of employers()) {
       if (!operating(e, t)) continue;
-      for (const bucket of [all, by[e.district]]) { bucket.total += e.capacity; bucket.list.push(e); bucket.cum.push(bucket.total); }
+      const w = want && e.kind === 'business' ? Math.max(1, Math.min(e.capacity * 1.25, (want[e.id] || 0) / 0.8)) : e.capacity;
+      for (const bucket of [all, by[e.district]]) { bucket.total += w; bucket.list.push(e); bucket.cum.push(bucket.total); }
     }
     const out = { all, by, jobs: all.total };
     if (openCache.size > 120) openCache.clear();
@@ -535,19 +543,21 @@
       const last = c.spells[c.spells.length - 1];
       if (last && last.pending) {
         const e = employers().byId[last.employer], upTo = Math.min(last.planned, t);
-        let x = last.checked;
-        for (; x + 7 * DAY <= upTo; x += 7 * DAY) if (!operating(e, x + 7 * DAY)) break;
-        if (x + 7 * DAY <= upTo) {
-          // closed this week: find the day
-          let y = x; while (y < x + 7 * DAY && operating(e, y + DAY)) y += DAY;
-          last.to = y + DAY; last.reason = e.kind === 'site' ? 'Laid off when ' + e.name + ' closed' : 'The building was finished';
+        let x = last.checked, closedAt = null;
+        if (e.kind === 'business') closedAt = COM().closeOf(e.id, last.gen, upTo); // the Exchange knows when a business fails
+        else {
+          for (; x + 7 * DAY <= upTo; x += 7 * DAY) if (!operating(e, x + 7 * DAY)) break;
+          if (x + 7 * DAY <= upTo) { let y = x; while (y < x + 7 * DAY && operating(e, y + DAY)) y += DAY; closedAt = y + DAY; } // closed this week: find the day
+        }
+        if (closedAt !== null) {
+          last.to = closedAt; last.reason = e.kind === 'business' ? 'Laid off when ' + last.name + ' closed' : e.kind === 'site' ? 'Laid off when ' + e.name + ' closed' : 'The building was finished';
           delete last.pending;
           const r = seeded('laidoff:' + id + ':' + c.k);
           const look = Math.floor((2 + r() * 6) * MONTH);
           c.spells.push({ from: last.to, to: last.to + look, status: 'looking', reason: 'Laid off' });
           c.next = last.to + look;
         } else if (last.planned <= t) { delete last.pending; c.next = last.planned; }
-        else { last.checked = x; return c.spells; } // still open: we can't know more until t moves on
+        else { last.checked = e.kind === 'business' ? upTo : x; return c.spells; } // still open: we can't know more until t moves on
       }
       if (c.next > t || c.k >= 200) break;
       const S = c.next, k = c.k++;
@@ -575,13 +585,22 @@
       }
       const local = open.by[district];
       const e = local.total && r() < 0.6 ? choose(local, r()) : choose(open.all, r());
+      // a business that has closed since the month began isn't hiring: back to looking
+      const occ = e.kind === 'business' ? COM().occupantAt(e.id, S) : null;
+      if (e.kind === 'business' && !occ) {
+        const end = S + Math.floor((0.5 + r() * 2) * MONTH);
+        c.spells.push({ from: S, to: end, status: 'looking', reason: 'Between jobs' });
+        c.next = end;
+        continue;
+      }
       const want = dream(id);
       const title = e.titles.indexOf(want) >= 0 && r() < 0.5 ? want : pick(r, e.titles);
       const wage = Math.round(SECTOR[e.sector].wage * (0.85 + r() * 0.3) * (1 + Math.min(0.4, (age - 22) * 0.01)) / 10) * 10;
       const planned = Math.min(S + len, retireAt);
       const spell = { from: S, to: planned, status: 'employed', employer: e.id, title, wage, dream: title === want };
+      if (occ) { spell.name = occ.name; spell.gen = occ.generation; }
       c.spells.push(spell);
-      if (e.kind === 'site' || e.kind === 'construction') { spell.pending = true; spell.planned = planned; spell.checked = S > LIFE_START ? S : LIFE_START; c.next = Infinity; continue; }
+      if (e.kind === 'site' || e.kind === 'construction' || occ) { spell.pending = true; spell.planned = planned; spell.checked = S > LIFE_START ? S : LIFE_START; c.next = Infinity; continue; }
       c.next = planned;
     }
     return c.spells;
@@ -591,7 +610,7 @@
     if (t < LIFE_START) return { status: 'unknown' };
     const age = ageAt(birth, t);
     if (age < 18) return { status: 'young' };
-    for (const sp of careerUntil(id, birth, district, t)) if (t >= sp.from && t < sp.to) return Object.assign({}, sp, sp.employer ? { employerName: employers().byId[sp.employer].name, sector: employers().byId[sp.employer].sector } : {});
+    for (const sp of careerUntil(id, birth, district, t)) if (t >= sp.from && t < sp.to) return Object.assign({}, sp, sp.employer ? { employerName: sp.name || employers().byId[sp.employer].name, sector: employers().byId[sp.employer].sector } : {});
     return { status: age >= 67 ? 'retired' : 'looking' };
   }
   function jobOf(id, t) {
@@ -653,7 +672,7 @@
     }
     if (c.present && ageAt(c.birth, t) >= 18 && t >= LIFE_START) {
       c.work = careerAt(c.id, c.birth, c.district, t);
-      c.career = careerUntil(c.id, c.birth, c.district, t).filter((sp) => sp.from <= t && sp.status !== 'young').map((sp) => Object.assign({}, sp, sp.employer ? { employerName: employers().byId[sp.employer].name } : {}));
+      c.career = careerUntil(c.id, c.birth, c.district, t).filter((sp) => sp.from <= t && sp.status !== 'young').map((sp) => Object.assign({}, sp, sp.employer ? { employerName: sp.name || employers().byId[sp.employer].name } : {}));
     }
     c.stage = c.age < 5 ? 'Too young for school' : c.age < 13 ? 'At primary school' : c.age < 18 ? 'Old enough for Pixel High' : c.age < 22 ? 'Old enough for university' : c.age < 67 ? 'Of working age' : 'Retired';
     c.householdMembers = c.household.map((mid) => { const m = named(character(mid)); const gone = t >= LIFE_START && t >= darkAt(mid, m.birth); return { id: mid, name: m.name, role: m.role, age: ageAt(m.birth, gone ? darkAt(mid, m.birth) : t), color: m.color, born: t >= m.birth, goneDark: gone, lit: m.lit }; });
@@ -761,7 +780,7 @@
       const h = all[Math.floor(r() * all.length)];
       const hh = residentsOfHome(h.i, pd);
       const m = hh.members[Math.floor(r() * hh.members.length)];
-      if (ageAt(m.birth, pd) < 18) continue;
+      if (!m || ageAt(m.birth, pd) < 18) continue; // an empty home, between tenants
       const c = named(character(m.id)), o = opinions(c, pd);
       n++;
       moods[o.mood]++; tops[o.top] = (tops[o.top] || 0) + 1; leans[o.lean] = (leans[o.lean] || 0) + 1; favs[c.favourite] = (favs[c.favourite] || 0) + 1;
@@ -902,16 +921,16 @@
   // ================================================================ public API
   root.PixelUniverse = root.PixelUniverse || {};
   root.PixelUniverse.labour = {
-    version: VERSION, source: 'jobs', startDate: ymd(LIFE_START + 12 * H), start: LIFE_START, opens: JOB_CENTRE_OPENS, ready, SECTOR,
+    version: VERSION, source: 'jobs', startDate: ymd(LIFE_START + 12 * H), start: LIFE_START, opens: JOB_CENTRE_OPENS, ready: fullReady, registryReady: ready, SECTOR,
     employers: () => (ready() ? employers() : []), operating,
     /** What a resident does for a living at t: { status: 'employed' | 'looking' | 'away' | 'retired' | 'young', employer, employerName, title, wage, from, to, dream, reason } */
-    jobOf, careerOf: (id, t) => { const c = character(id); return c ? careerUntil(id, c.birth, c.district, t).filter((sp) => sp.from <= t && sp.status !== 'young').map((sp) => Object.assign({}, sp, sp.employer ? { employerName: employers().byId[sp.employer].name } : {})) : []; },
+    jobOf, careerOf: (id, t) => { const c = character(id); return c ? careerUntil(id, c.birth, c.district, t).filter((sp) => sp.from <= t && sp.status !== 'young').map((sp) => Object.assign({}, sp, sp.employer ? { employerName: sp.name || employers().byId[sp.employer].name } : {})) : []; },
     careerAt, labourAt, eventsBetween: (from, to) => (ready() ? labourEvents(from, to) : []),
     /** The ids of everyone employed by one employer at t (for an institution's staff list). */
     staffOf: (employerId, t) => { const out = []; for (const h of homes()) for (const m of residentsOfHome(h.i, t).members) { if (ageAt(m.birth, t) < 18) continue; const j = careerAt(m.id, m.birth, h.district, t); if (j.status === 'employed' && j.employer === employerId) out.push(m.id); } return out; }
   };
   root.PixelUniverse.census = {
-    version: VERSION, source: 'census', startDate: ymd(OPENS), opens: OPENS, epoch: EPOCH, ready, TRAITS, CONCERNS, PIXELS,
+    version: VERSION, source: 'census', startDate: ymd(OPENS), opens: OPENS, epoch: EPOCH, ready: fullReady, TRAITS, CONCERNS, PIXELS,
     stateAt(t) {
       if (!ready()) return { time: t, started: false, unavailable: 'Pixel City could not be reached' };
       if (t < EPOCH) return { time: t, started: false };

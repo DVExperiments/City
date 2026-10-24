@@ -28,7 +28,9 @@ The city reads the Weather Bureau's climate and the Senate's environmental laws,
 <script src="https://dvexperiments.github.io/City/universe.js"></script>
 ```
 
-If either fails to load, the city refuses to run (`ready()` returns false) rather than compute a different history. The Senate does not read the city yet; that feedback arrives with the Ecosystem (phase 2).
+If either fails to load, the city refuses to run (`ready()` returns false) rather than compute a different history.
+
+The Census Office's working lives (`census.js`) also depend on the Pixel Exchange (`https://dvexperiments.github.io/Exchange/universe.js`, loaded after `census.js`): from 1 December 2026, businesses hire and lay off staff as they trade. The businesses are the things pixels use (render plants, palette refineries, charge bars, patch shops and so on). The Senate does not read the city yet; that feedback arrives with the Ecosystem (phase 2).
 
 ## The map
 
