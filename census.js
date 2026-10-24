@@ -107,9 +107,11 @@
 
   // ================================================================ homes: every residential building on the map
   let HOMES = null, BY_DISTRICT = null;
+  const renewedMap = () => (C().renewalAt ? C().map(C().renewalAt()) : C().map());
   function homes() {
     if (HOMES) return HOMES;
-    const map = C().map(), T = C().T, RES = C().RESIDENTS;
+    // the census counts the renewed city's homes (after the Renewal some homes made way for new buildings)
+    const map = renewedMap(), T = C().T, RES = C().RESIDENTS;
     HOMES = []; BY_DISTRICT = map.districts.map(() => []);
     for (let i = 0; i < map.tiles.length; i++) {
       const type = map.tiles[i], k = map.district[i], cap = RES[type];
@@ -202,7 +204,7 @@
     const r = seeded('character:' + id);
     const traits = {};
     for (const [key] of TRAITS) traits[key] = rd2(r());
-    const homePixel = PIXELS.filter((x) => x[1] === C().map().districts[home.district].name)[0];
+    const homePixel = PIXELS.filter((x) => x[1] === renewedMap().districts[home.district].name)[0];
     const fav = homePixel && r() < 0.3 ? homePixel : pick(r, PIXELS);
     const h1 = pick(r, HOBBIES);
     let h2 = pick(r, HOBBIES); if (h2 === h1) h2 = HOBBIES[(HOBBIES.indexOf(h1) + 7) % HOBBIES.length];
@@ -210,7 +212,7 @@
     return {
       id, first: pick(r, FIRST), surname: mem.surname, name: '', color: colorFor(r), role: mem.role, birth: mem.birth,
       birthday: new Date(mem.birth).getUTCDate() + ' ' + ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][new Date(mem.birth).getUTCMonth()],
-      home: home.i, address: home.address, district: home.district, districtName: C().map().districts[home.district].name, homeKind: home.kind,
+      home: home.i, address: home.address, district: home.district, districtName: renewedMap().districts[home.district].name, homeKind: home.kind,
       movedIn: hh.start, movesOut: hh.end, household: hh.members.map((m) => m.id), householdKind: hh.kind,
       traits, favourite: fav[0], favouriteName: fav[1], hobbies: [h1, h2], hope: pick(r, HOPES), dreamJob: pick(r, JOBS), quirk: pick(r, QUIRKS), leanNoise
     };
@@ -223,7 +225,7 @@
     const d = dayOf(t);
     if (ctxCache.has(d)) return ctxCache.get(d);
     // residents judge the city by the day just gone: at midnight the city's own day has barely begun
-    const c = C(), st = c.stateAt(d - 1), map = c.map();
+    const c = C(), st = c.stateAt(d - 1), map = renewedMap();
     const week = c.historyBetween(d - 7 * DAY, d);
     const dark = {};
     for (const day of week) for (const k in day.dark) dark[k] = (dark[k] || 0) + day.dark[k];
@@ -369,7 +371,7 @@
   function stats(t) {
     const d = dayOf(t);
     if (statCache.has(d)) return statCache.get(d);
-    const map = C().map();
+    const map = renewedMap();
     const ages = [], byD = map.districts.map((x) => ({ id: x.id, name: x.name, residents: 0, homes: 0, ages: [], children: 0, over65: 0 }));
     let households = 0;
     for (const h of homes()) {
@@ -405,7 +407,7 @@
     const pd = panelDate(t);
     if (pd === null) return null;
     if (panelCache.has(pd)) return panelCache.get(pd);
-    const map = C().map(), all = homes();
+    const map = renewedMap(), all = homes();
     const r = seeded('panel:' + ymd(pd));
     const moods = { content: 0, uneasy: 0, unhappy: 0 }, tops = {}, leans = { B: 0, V: 0, L: 0, undecided: 0 }, favs = {};
     const byD = map.districts.map(() => ({ n: 0, happy: 0, tops: {} }));
@@ -485,7 +487,7 @@
       if (at < lo || at >= to) continue;
       const list = byDay[d];
       const first = household(list[0][1], list[0][2]), was = household(list[0][1], list[0][2] - 1);
-      const dn = C().map().districts[homes()[list[0][1]].district].name;
+      const dn = renewedMap().districts[homes()[list[0][1]].district].name;
       out.push({ id: 'census:moves:' + ymd(+d), time: iso(at), source: 'census', type: 'census.moves', importance: 1, data: { households: list.length },
         headline: (list.length < WORDS.length ? WORDS[list.length] : String(list.length)) + ' household' + (list.length === 1 ? '' : 's') + ' moved home today, among them the ' + first.surname + ' family, who replace the ' + was.surname + ' family in ' + dn + ' district' });
     }

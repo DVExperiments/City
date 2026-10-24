@@ -12,7 +12,7 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '0.1.0';
+  const VERSION = '0.2.0';
   const MIN = 60000, H = 3600000, DAY = 86400000;
   const EPOCH = Date.UTC(2025, 11, 3);
   const PI = 3.141592653589793, TAU = 6.283185307179586;
@@ -56,6 +56,9 @@
 
   // ---------------------------------------------------------------- upstream
   const climate = () => root.PixelUniverse && root.PixelUniverse.climate;
+  // the city's clock comes from the Weather Bureau, the universe's one source of truth for it
+  const offsetAt = (t) => (climate() && climate().offsetAt ? climate().offsetAt(t) : 0);
+  const renewalAt = () => (climate() && climate().renewal ? climate().renewal : RENEWAL_FALLBACK);
   const senate = () => root.PixelUniverse && root.PixelUniverse.senate;
   const ready = () => !!(climate() && senate() && (!senate().ready || senate().ready()));
 
@@ -229,6 +232,74 @@
     return { W, H: HT, tiles, district, owner, features, districts, residents, berths, mouth: { x: W + 3, y: 58 } };
   }
 
+  // ================================================================ the Renewal
+  // From the Renewal (the Weather Bureau's renewal date, 1 November 2026) the city keeps City Standard Time and stands
+  // renewed: the same coast, river, districts, roads and reserved sites, with new buildings for the universe's newer
+  // institutions, plots for those still to come, and town squares where residents gather. Homes the new buildings
+  // replace are gone, so the population is a little smaller. Everything before the Renewal is unchanged.
+  const RENEWAL_FALLBACK = Date.UTC(2026, 10, 1);
+  const URL_BASE = 'https://dvexperiments.github.io/';
+  const NEW_BUILDINGS = [
+    // type, name, width, height, near x, near y, link, planned
+    ['museum', 'The Museum of the Pixel Universe', 6, 4, 56, 52, URL_BASE + 'Museum/', false],
+    ['census', 'The Census Office', 4, 3, 82, 52, URL_BASE + 'City/census.html', false],
+    ['radio', 'Pixel FM Studios', 4, 4, 62, 30, URL_BASE + 'PixelFM/', false],
+    ['observatory', 'The Universe Observatory', 5, 5, 104, 16, URL_BASE + 'Universe/', false],
+    ['bank', 'The Bank of Pixel City', 5, 4, 76, 46, null, true],
+    ['jobs', 'The Job Centre', 4, 3, 64, 68, null, true],
+    ['school', 'Pixel High', 8, 5, 38, 40, null, true],
+    ['university', 'Pixel University', 10, 7, 84, 86, null, true]
+  ];
+  function renew(m) {
+    const at = (x, y) => y * m.W + x;
+    const ok = new Set([T.HOUSE, T.APARTMENT, T.SHOP, T.OFFICE, T.FACTORY, T.WAREHOUSE, T.GRASS, T.PARK, T.STREET, T.PLAZA]);
+    const fits = (x, y, w, h) => {
+      if (x < 1 || y < 1 || x + w >= m.W || y + h >= m.H) return false;
+      for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) { const i = at(xx, yy); if (m.owner[i] >= 0 || !ok.has(m.tiles[i]) || m.district[i] < 0) return false; }
+      return true;
+    };
+    const spot = (x0, y0, w, h) => { // the nearest free ground, searching outwards
+      for (let r = 0; r < 30; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if ((dx < 0 ? -dx : dx) !== r && (dy < 0 ? -dy : dy) !== r) continue;
+        if (fits(x0 + dx, y0 + dy, w, h)) return { x: x0 + dx, y: y0 + dy };
+      }
+      return null;
+    };
+    for (const [type, name, w, h, x0, y0, link, planned] of NEW_BUILDINGS) {
+      const p = spot(x0, y0, w, h);
+      if (!p) continue;
+      const f = { kind: 'landmark', type, name, x: p.x, y: p.y, w, h, link, planned, id: m.features.length };
+      f.district = m.district[at(p.x + (w >> 1), p.y + (h >> 1))];
+      for (let yy = p.y; yy < p.y + h; yy++) for (let xx = p.x; xx < p.x + w; xx++) { m.owner[at(xx, yy)] = f.id; m.tiles[at(xx, yy)] = T.LANDMARK; }
+      m.features.push(f);
+    }
+    for (const f of m.features) {
+      if (f.type === 'bookmaker') f.link = URL_BASE + 'Bookmaker/';
+      if (f.type === 'press') { f.link = URL_BASE + 'DailyPixel/'; f.name = 'The Daily Pixel'; }
+    }
+    // a town square at the heart of each district, where residents meet
+    m.squares = [];
+    for (const D of m.districts) {
+      const p = spot(D.cx - 1, D.cy - 1, 3, 3);
+      if (!p) continue;
+      for (let yy = p.y; yy < p.y + 3; yy++) for (let xx = p.x; xx < p.x + 3; xx++) m.tiles[at(xx, yy)] = T.PLAZA;
+      m.squares.push({ district: D.id, x: p.x, y: p.y, w: 3, h: 3, name: D.name + ' Square' });
+    }
+    // count the people again
+    for (const D of m.districts) { D.tiles = 0; D.residents = 0; D.jobs = 0; D.uses = {}; }
+    for (let i = 0; i < m.tiles.length; i++) {
+      const k = m.district[i];
+      if (k < 0) continue;
+      const D = m.districts[k];
+      D.tiles++; D.residents += RESIDENTS[m.tiles[i]] || 0; D.jobs += JOBS[m.tiles[i]] || 0;
+      D.uses[m.tiles[i]] = (D.uses[m.tiles[i]] || 0) + 1;
+    }
+    m.residents = 0;
+    for (const D of m.districts) m.residents += D.residents;
+    m.era = 2;
+    return m;
+  }
+
   // ================================================================ construction over time
   const SITE_FOR = { coal: 'policy.coalPlants', solar: 'policy.solarSubsidy', wind: 'policy.windFarms', park: 'policy.parks', wildlife: 'policy.wildlifeZones' };
   const BUILD_DAYS = { coal: 30, solar: 10, wind: 14, park: 5, wildlife: 3 };
@@ -275,7 +346,7 @@
   }
   /** One hour on the grid. */
   function gridHour(map, t, ops, levels) {
-    const x = climate().sample(t), h = (t % DAY) / H;
+    const x = climate().sample(t), h = (((t + offsetAt(t)) % DAY) + DAY) % DAY / H; // the hour on the city's clock
     const dl = climate().normals(t).dayLength, rise = 12 - dl / 2, f = (h - rise) / dl;
     const sun = f > 0 && f < 1 ? 4 * f * (1 - f) : 0;
     const scale = 250 / (map.residents / 1000 || 1);
@@ -344,7 +415,14 @@
     let map = null, tls = null, tlTo = 0;
     const days = new Map(); // day -> summary
     const hist = { day: EPOCH, smog: 20, peak: 0, events: [], prevStates: null, smogAlert: false };
+    let renewed = null;
     function ensureMap() { if (!map) map = buildMap(senate().districtProfiles); return map; }
+    /** The map in force at time t: the founding map before the Renewal, the renewed city after it. */
+    function mapAt(t) {
+      if (t < renewalAt()) return ensureMap();
+      if (!renewed) renewed = renew(buildMap(senate().districtProfiles));
+      return renewed;
+    }
     function ensureTimelines(t) {
       if (!tls || t > tlTo) { tls = timelines(dayOf(t) + DAY); tlTo = dayOf(t) + DAY; }
       return tls;
@@ -358,7 +436,7 @@
       return { ops, levels };
     }
     function summarise(d, upTo) {
-      const m = ensureMap();
+      const m = mapAt(d);
       const hours = [];
       let peak = 0, energy = { solar: 0, wind: 0, coal: 0, link: 0, gas: 0 }, short = 0, dark = {}, emissions = 0;
       for (let k = 0; k < 24; k++) {
@@ -508,7 +586,7 @@
     function stateAt(t) {
       if (!ready()) return { time: t, started: false, unavailable: 'The Weather Bureau or the Senate could not be reached' };
       if (t < EPOCH) return { time: t, started: false };
-      const m = ensureMap(), d = dayOf(t);
+      const m = mapAt(t), d = dayOf(t);
       ensure(d);
       const { ops, levels } = opsAt(t);
       const g = gridHour(m, t, ops, levels);
@@ -521,7 +599,9 @@
     }
     return {
       version: VERSION, source: 'city', startDate: ymd(EPOCH), epoch: EPOCH, ready,
-      map: () => (ready() ? ensureMap() : null), T, TILE_NAMES, RESIDENTS, JOBS, MW,
+      // map(): the founding map (unchanged, for sites whose history depends on it). map(t): the map in force at t.
+      map: (t) => (!ready() ? null : t === undefined ? ensureMap() : mapAt(t)), T, TILE_NAMES, RESIDENTS, JOBS, MW,
+      renewal: renewalAt(), renewalAt, offsetAt,
       stateAt, eventsBetween, historyBetween,
       shipsAt: (t) => (ready() && t >= EPOCH ? shipsAt(t) : []),
       portBetween: (from, to) => {

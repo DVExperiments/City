@@ -28,8 +28,10 @@
   const KIND = { coal: 'Coal plant', solar: 'Solar farm', wind: 'Wind farm', park: 'Park', wildlife: 'Wildlife zone' };
   const STATE = { empty: 'Empty site', building: 'Under construction', operating: 'Open', clearing: 'Being cleared' };
   const SENATE_URL = 'https://dvexperiments.github.io/Senate/';
+  // the city's clock: UTC until the Renewal, City Standard Time (UTC+12) after it. Display times go through cityMs.
+  const cityMs = (ms) => ms + (C.offsetAt ? C.offsetAt(ms) : 0);
   function light(t) {
-    const dl = W.normals(t).dayLength, h = (t % DAY) / H, rise = 12 - dl / 2, set = 12 + dl / 2;
+    const dl = W.normals(t).dayLength, h = ((cityMs(t) % DAY) + DAY) % DAY / H, rise = 12 - dl / 2, set = 12 + dl / 2;
     if (h < rise - 0.75 || h > set + 0.75) return 0;
     if (h < rise + 0.75) return (h - rise + 0.75) / 1.5;
     if (h > set - 0.75) return (set + 0.75 - h) / 1.5;
@@ -66,9 +68,9 @@
     },
     mount() {
       if (now() < C.epoch) { document.getElementById('status').textContent = 'Pixel City\u2019s records begin on ' + fYear.format(C.epoch) + '.'; return null; }
-      const map = C.map();
+      const map = C.map(now());
       let st = C.stateAt(now()), wx = W.sample(now());
-      const view = window.CityMap(document.getElementById('citymap'), { onSelect: (sel) => showSelection(sel) });
+      const view = window.CityMap(document.getElementById('citymap'), { onSelect: (sel) => showSelection(sel), time: now(), personHref: (id) => 'census.html' + AT + '#/resident/' + id });
       if (window.__cityFocus) { view.focus(window.__cityFocus[0] + 0.5, window.__cityFocus[1] + 0.5, 12); window.__cityFocus = null; }
       document.getElementById('zin').onclick = () => view.zoom(1.6);
       document.getElementById('zout').onclick = () => view.zoom(1 / 1.6);
@@ -78,7 +80,7 @@
       const loop = () => { view.frame(st, light(now()), wx, now()); raf = requestAnimationFrame(loop); };
       const set = (id, html) => { const el = document.getElementById(id); if (el && el.innerHTML !== html) el.innerHTML = html; };
       const cta = (href, text, internal) => '<p><a class="cta" href="' + (internal ? AT + '#/' + href : href) + '">' + text + ' <span aria-hidden="true">\u2192</span></a></p>';
-      const fmtT = (ms) => fTime.format(ms) + (dayOf(ms) !== dayOf(now()) ? ', ' + fShort.format(ms) : '');
+      const fmtT = (ms) => fTime.format(cityMs(ms)) + (dayOf(cityMs(ms)) !== dayOf(cityMs(now())) ? ', ' + fShort.format(cityMs(ms)) : '');
       function districtCard(d) {
         const sens = senatorsFor(d.name), dk = monthStats(now());
         const parks = st.sites.filter((x) => x.type === 'park' && x.state === 'operating' && map.features[x.id].district === d.id).length;
@@ -96,12 +98,12 @@
           const day = dayOf(t), sits = S.calendar.isSitting(day) && t < day + 23.5 * H && !S.calendar.adjourned(day);
           const line = !ss.started ? 'The founding election is on ' + fYear.format(Date.UTC(2026, 10, 28)) + '.' : ss.dissolved ? 'The Senate is dissolved until the snap election on ' + esc(ss.snapElection) + '.' :
             'Brightness ' + ss.composition.B + ', Verdant ' + ss.composition.V + ', Legacy Mode ' + ss.composition.L + (ss.composition.I ? ', independents ' + ss.composition.I : '') + '.' +
-            (ss.majorityLeader ? ' Majority Leader: Senator ' + esc(ss.majorityLeader.name) + '.' : '') + (sits ? (t >= day + 19 * H ? ' The Senate is sitting now.' : ' Sits tonight at 19:00.') : '');
+            (ss.majorityLeader ? ' Majority Leader: Senator ' + esc(ss.majorityLeader.name) + '.' : '') + (sits ? (t >= day + 19 * H ? ' The Senate is sitting now.' : ' Sits at ' + fTime.format(cityMs(day + 19 * H)) + ' city time.') : '');
           return '<p class="lede" style="font-size:1rem">Where the Pixel Senate sits. ' + line + '</p>' + cta(f.link, 'Visit the Senate');
         }
         if (f.type === 'stadium') {
           const gp = new Date(t).getUTCDate() <= 2;
-          return '<p class="lede" style="font-size:1rem">Home of Glacial, the world\u2019s slowest race. ' + (gp ? 'It is Grand Prix weekend, and the stands are packed.' : 'Today\u2019s Daily Crawl started at midnight and will finish late tonight.') +
+          return '<p class="lede" style="font-size:1rem">Home of Glacial, the world\u2019s slowest race. ' + (gp ? 'It is Grand Prix weekend, and the stands are packed.' : 'Today\u2019s Daily Crawl started at ' + fTime.format(cityMs(dayOf(t))) + ' city time and will finish around the same time tomorrow.') +
             ' Conditions: ' + esc(wxNow.cond.toLowerCase()) + ', ' + Math.round(wxNow.temp) + '\u00b0C.</p>' + cta(f.link, 'Watch the race on Glacial');
         }
         if (f.type === 'bureau') {
@@ -114,8 +116,13 @@
           return '<p class="lede" style="font-size:1rem">' + (ships ? ships + ' ship' + (ships === 1 ? ' is' : 's are') + ' alongside.' : 'The berths are empty for now.') + ' Coal, gas and containers come through here.</p>' + cta('port', 'See the arrivals board', true);
         }
         if (f.type === 'gas') return '<p class="lede" style="font-size:1rem">Two gas peakers, fired up when the city runs short. Output now: ' + Math.round(st.grid.gas) + ' MW of ' + C.MW.gas + '.</p>' + cta('power', 'See the power grid', true);
-        if (f.type === 'bookmaker') return '<p class="lede" style="font-size:1rem">Opening soon. City residents will bet on Glacial\u2019s races here, and their bets will move the odds.</p>';
-        if (f.type === 'press') return '<p class="lede" style="font-size:1rem">Opening soon. The city\u2019s newspaper will be printed here, with news from every corner of the Pixel Universe.</p>';
+        if (f.type === 'bookmaker') return '<p class="lede" style="font-size:1rem">Odds on every race at the Glacial Stadium. City residents bet here, and their bets move the prices.</p>' + cta(f.link, 'See today\u2019s odds');
+        if (f.type === 'press') return '<p class="lede" style="font-size:1rem">Where the Daily Pixel is written and printed. A new edition every day at 00:00 UTC.</p>' + cta(f.link, 'Read today\u2019s paper');
+        if (f.type === 'museum') return '<p class="lede" style="font-size:1rem">The history of the Pixel Universe: its champions, its records, its laws, and an archive of every month since the first Daily Crawl.</p>' + cta(f.link, 'Visit the Museum');
+        if (f.type === 'census') return '<p class="lede" style="font-size:1rem">The Census Office keeps a file on every resident of Pixel City: ' + st.residents.toLocaleString() + ' of them, by name.</p>' + cta(f.link, 'Visit the Census Office');
+        if (f.type === 'radio') return '<p class="lede" style="font-size:1rem">Home of Pixel FM, 88.8. Music for pixels, and anyone near one, around the clock.</p>' + cta(f.link, 'Listen live');
+        if (f.type === 'observatory') return '<p class="lede" style="font-size:1rem">From up here you can see the whole Pixel Universe at once: the race, the city, the Senate, the weather and the news.</p>' + cta(f.link, 'Look through the telescope');
+        if (f.planned) return '<p class="lede" style="font-size:1rem">' + esc(f.name) + ' is coming soon. The ground has been cleared and the fence is up.</p>';
         return '';
       }
       function showSelection(sel) {
@@ -153,9 +160,9 @@
         st = C.stateAt(t); wx = W.sample(t);
         n++;
         const g = st.grid;
-        set('clock', 'City time ' + fSec.format(t));
+        set('clock', 'City time ' + fSec.format(cityMs(t)));
         set('barleft', esc(wx.cond) + ', ' + wx.temp.toFixed(1) + '\u00b0C. Air: ' + esc(st.air) + ' (' + st.aqi + ')');
-        set('kicker', 'Pixel City, ' + esc(fDate.format(t)) + '. ' + st.residents.toLocaleString() + ' residents.');
+        set('kicker', 'Pixel City, ' + esc(fDate.format(cityMs(t))) + '. ' + st.residents.toLocaleString() + ' residents.');
         const clean = g.demand ? Math.round((g.solar + g.wind) / (g.solar + g.wind + g.coal + g.link + g.gas || 1) * 100) : 0;
         set('status', st.dark.length ? 'Rolling blackouts in ' + esc(names(st.dark.map((i) => map.districts[i].name))) + ': the city needs ' + Math.round(g.shortfall) + ' MW more than it can supply.'
           : 'The lights are on. The grid is carrying ' + Math.round(g.demand) + ' MW, ' + clean + '% of it clean.');
@@ -185,7 +192,7 @@
   V.districts = {
     title: 'Districts',
     render() {
-      const map = C.map(), t = now(), dark = monthStats(t), st = C.stateAt(t);
+      const t = now(), map = C.map(t), dark = monthStats(t), st = C.stateAt(t);
       const rows = map.districts.slice().sort((a, b) => b.residents - a.residents).map((d) => {
         const sens = senatorsFor(d.name);
         const parks = st.sites.filter((s) => s.type === 'park' && s.state === 'operating' && map.features[s.id].district === d.id).length;
@@ -199,7 +206,7 @@
   V.district = {
     title: 'District',
     render(id) {
-      const map = C.map(), d = map.districts[+id];
+      const map = C.map(now()), d = map.districts[+id];
       if (!d) return head('Unknown district', '');
       const t = now(), st = C.stateAt(t), dark = monthStats(t);
       const sens = senatorsFor(d.name);
@@ -231,7 +238,7 @@
   V.power = {
     title: 'Power',
     render() {
-      const t = now(), st = C.stateAt(t), map = C.map();
+      const t = now(), st = C.stateAt(t), map = C.map(t);
       const days = C.historyBetween(t - 60 * DAY, t);
       const W2 = 960, Hh = 220, P = 30, n = days.length;
       let chart = '';
@@ -271,8 +278,8 @@
       const t = now(), d = dayOf(t);
       const status = (c) => (t < c.arrive - 2 * H ? (c.held >= 3 * H && t >= c.due ? '<span class="miss">Held by weather</span>' : 'Due') : t < c.arrive ? 'Coming in' : t <= c.depart ? '<b>Alongside</b>' : t <= c.depart + 2 * H ? 'Sailing' : 'Sailed');
       const row = (c) => '<tr>' + td('<b>' + esc(c.name) + '</b>') + td(esc(c.label)) + td(esc(c.from)) + td(c.cargo.toLocaleString() + ' ' + esc(c.unit)) +
-        td(fTime.format(c.arrive) + (dayOf(c.arrive) !== d ? ' <small>' + esc(fShort.format(c.arrive)) + '</small>' : '') + (c.held >= 3 * H ? ' <small>(+' + Math.round(c.held / H) + ' h)</small>' : '')) +
-        td(fTime.format(c.depart) + (dayOf(c.depart) !== d ? ' <small>' + esc(fShort.format(c.depart)) + '</small>' : '')) + td(String(c.berth)) + td(status(c)) + '</tr>';
+        td(fTime.format(cityMs(c.arrive)) + (dayOf(c.arrive) !== d ? ' <small>' + esc(fShort.format(cityMs(c.arrive))) + '</small>' : '') + (c.held >= 3 * H ? ' <small>(+' + Math.round(c.held / H) + ' h)</small>' : '')) +
+        td(fTime.format(cityMs(c.depart)) + (dayOf(c.depart) !== d ? ' <small>' + esc(fShort.format(cityMs(c.depart))) + '</small>' : '')) + td(String(c.berth)) + td(status(c)) + '</tr>';
       const board = C.portBetween(d - DAY, d + DAY - 1).filter((c) => c.depart + 2 * H >= t - 6 * H).sort((a, b) => a.arrive - b.arrive);
       const month = C.portBetween(t - 30 * DAY, t).filter((c) => c.arrive <= t);
       const tot = {};
