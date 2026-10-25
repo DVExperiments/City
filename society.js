@@ -246,7 +246,7 @@
       for (let j = 0; j < 4; j++) lean[c.i * 4 + j] = w[j] / tot;
       mood[c.i] = 0.6 + (r() - 0.5) * 0.1;
     }
-    OP = { k: 0, lean, mood, base: lean.slice(), days: [], events: [], rival: {}, top: {}, turned: {}, pop: new Float64Array(C.D).fill(1), needs: new Float64Array(C.D * 5).fill(0.7), staff0: null, exodus: {}, full: {}, month: { left: new Float64Array(C.D), came: new Float64Array(C.D) } };
+    OP = { k: 0, lean, mood, base: lean.slice(), days: [], events: [], rival: {}, top: {}, turned: {}, pop: new Float64Array(C.D).fill(1), needs: new Float64Array(C.D * 5).fill(0.7), staff0: null, exodus: {}, full: {}, month: { left: new Float64Array(C.D), came: new Float64Array(C.D), why: new Float64Array(6) } };
   }
   const cityChunk = new Map(), exChunk = new Map();
   function worldYesterday(k) { // what happened on trading day k-1, as each district felt it
@@ -271,7 +271,7 @@
     const wellbeing = (d) => { const n = OP.needs; return 0.25 * n[d * 5] + 0.2 * n[d * 5 + 1] + 0.2 * n[d * 5 + 2] + 0.15 * n[d * 5 + 3] + 0.2 * n[d * 5 + 4]; };
     const wellOn = dayStart(k) >= WELL_START;
     // what each district has been through yesterday, as pressure towards each party
-    const push = [], hardship = new Float64Array(C.D);
+    const push = [], pressures = [], hardship = new Float64Array(C.D);
     for (let d = 0; d < C.D; d++) {
       const smog = clamp((w.aqi - 80) / 120, 0, 1), dark = clamp((w.dark[d] || 0) / 6, 0, 1);
       const lost = clamp(w.jobsLost[d] / (C.districts[d].residents * 0.004), 0, 1), shelf = w.shelves ? clamp(1 - w.shelves[d] / 1.5, 0, 1) : 0;
@@ -279,6 +279,7 @@
       // Verdant for clean air; Brightness for the lights and for good times; Legacy Mode when prices bite and the
       // shelves are empty; and, when jobs go, a turn against all of them
       push.push({ V: smog * 0.9, B: dark * 0.8 + boom * 0.4, L: prices * 0.7 + shelf * 0.5 + lost * 0.3, I: lost * 0.6 + shelf * 0.2 });
+      pressures.push([['the smog', smog], ['the blackouts', dark], ['lost jobs', lost], ['empty shelves', shelf], ['prices', prices], ['good times', boom]]);
       hardship[d] = clamp(smog * 0.4 + dark * 0.5 + lost * 0.8 + shelf * 0.4 + prices * 0.3 + w.glitch[d] * 0.6, 0, 1);
     }
     // friends pull each other's views together, and the day's events push them
@@ -311,7 +312,8 @@
       if (k - (OP.turned[c.i] || -999) < 30) continue; // wavering back and forth isn't news
       OP.turned[c.i] = k;
       let foe = null; for (const o of C.byDistrict[c.d]) if (o !== c && OP.top[o.i] === was && (!foe || o.size > foe.size)) foe = o;
-      emit('society.turns', 2, 'turn:' + c.i + ':' + ymd(dayStart(k)), { community: c.name, from: PIDS[was], to: PIDS[top], rival: foe ? foe.name : null },
+      const pr = pressures[c.d].slice().sort((a, b) => b[1] - a[1])[0], cause = pr && pr[1] > 0.05 ? pr[0] : 'their friends';
+      emit('society.turns', 2, 'turn:' + c.i + ':' + ymd(dayStart(k)), { community: c.name, from: PIDS[was], to: PIDS[top], rival: foe ? foe.name : null, cause, causes: [{ cause: cause === 'their friends' ? 'friends' : cause.replace(/^the /, ''), label: cause === 'their friends' ? 'their friends talked them round' : cause, share: 100 }] },
         'The ' + c.name + ' have turned to ' + PNAME[PIDS[top]] + (foe ? ', and the ' + foe.name + ' are no longer speaking to them' : ''), 3);
       if (foe) OP.rival[Math.min(c.i, foe.i) + ':' + Math.max(c.i, foe.i)] = k;
     }
@@ -343,6 +345,8 @@
       for (let d = 0; d < C.D; d++) {
         let m = 0, wsum = 0; for (const c of C.byDistrict[d]) { m += OP.mood[c.i] * c.size; wsum += c.size; } m = wsum ? m / wsum : 0.65;
         const jobR = OP.staff0[d] > 0 ? w.staffD[d] / OP.staff0[d] : 1, smog = clamp((w.aqi - 80) / 120, 0, 1), dark = clamp((w.dark[d] || 0) / 6, 0, 1);
+        const parts = [['the smog', 0.0006 * smog], ['the blackouts', 0.0005 * dark], ['lost jobs', 0.0008 * clamp(1 - jobR, 0, 1)], ['a sour mood', 0.0006 * clamp(0.6 - m, 0, 1)], ['glitches', 0.0004 * w.glitch[d]], ['a hard life', wellOn ? 0.0008 * clamp(0.55 - wellbeing(d), 0, 1) : 0]];
+        for (let j = 0; j < parts.length; j++) mon.why[j] += parts[j][1] * p2[d] * C.districts[d].residents;
         const leave = 0.00012 + 0.0006 * smog + 0.0005 * dark + 0.0008 * clamp(1 - jobR, 0, 1) + 0.0006 * clamp(0.6 - m, 0, 1) + 0.0004 * w.glitch[d] + (wellOn ? 0.0008 * clamp(0.55 - wellbeing(d), 0, 1) : 0); // a hard life is a reason to go
         const cheap = w.rentD ? clamp(1 - w.rentD[d], 0, 0.5) : 0; // cheap rents draw new residents to a district others left
         const pull = clamp(jobR, 0, 1.3), come = (1 - p2[d]) * 0.004 * (pull * pull + 1.5 * cheap) * (w.conf / 100) + 0.00012;
@@ -359,9 +363,10 @@
         let left = 0, came = 0; for (let d = 0; d < C.D; d++) { left += mon.left[d]; came += mon.came[d]; }
         let worst = 0; for (let d = 1; d < C.D; d++) if (mon.came[d] - mon.left[d] < mon.came[worst] - mon.left[worst]) worst = d;
         const net = came - left;
-        emit('society.migration', Math.abs(net) > 600 ? 3 : 2, 'migration:' + ymd(dayStart(k + 1)), { arrived: Math.round(came), left: Math.round(left), worst: C.districts[worst].name },
-          Math.round(left).toLocaleString('en') + ' pixels left Pixel City last month and ' + Math.round(came).toLocaleString('en') + ' arrived' + (net < -200 ? '; ' + C.districts[worst].name + ' lost the most' : net > 200 ? '; the city is filling up' : ''), 7);
-        OP.month = { left: new Float64Array(C.D), came: new Float64Array(C.D) };
+        const e0 = { arrived: Math.round(came), left: Math.round(left), worst: C.districts[worst].name };
+        emit('society.migration', Math.abs(net) > 600 ? 3 : 2, 'migration:' + ymd(dayStart(k + 1)), e0,
+          (() => { const L6 = ['the smog', 'the blackouts', 'lost jobs', 'a sour mood', 'glitches', 'a hard life']; let tw = 0; for (const v of mon.why) tw += v; e0.causes = tw > 0 ? L6.map((l, j) => ({ cause: l.replace(/^(the|a) /, ''), label: l, share: Math.round(mon.why[j] / tw * 100) })).filter((c) => c.share >= 10).sort((a, b) => b.share - a.share) : []; return ''; })() + Math.round(left).toLocaleString('en') + ' pixels left Pixel City last month and ' + Math.round(came).toLocaleString('en') + ' arrived' + (net < -200 ? '; ' + C.districts[worst].name + ' lost the most' : net > 200 ? '; the city is filling up' : ''), 7);
+        OP.month = { left: new Float64Array(C.D), came: new Float64Array(C.D), why: new Float64Array(6) };
       }
     }
     // the day's record
