@@ -27,7 +27,7 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '1.2.0';
+  const VERSION = '1.2.1';
   const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const START = Date.UTC(2026, 11, 1); // the December Grand Prix: Society begins with freight
   const VOTES_FROM = Date.UTC(2027, 4, 1); // elections read Society from the May 2027 general election
@@ -373,7 +373,7 @@
     const poll = new Float32Array(C.D * 4), dmood = new Float32Array(C.D), wsum = new Float64Array(C.D);
     for (const c of C.list) { for (let j = 0; j < 4; j++) poll[c.d * 4 + j] += OP.lean[c.i * 4 + j] * c.size; dmood[c.d] += OP.mood[c.i] * c.size; wsum[c.d] += c.size; }
     for (let d = 0; d < C.D; d++) { for (let j = 0; j < 4; j++) poll[d * 4 + j] /= wsum[d]; dmood[d] /= wsum[d]; }
-    OP.days.push({ k, needs: Float32Array.from(OP.needs), pop: Float32Array.from(OP.pop), poll, mood: dmood, lean: Float32Array.from(OP.lean), cmood: Float32Array.from(OP.mood), hardship: Float32Array.from(hardship) });
+    OP.days.push({ k, rival: Object.assign({}, OP.rival), needs: Float32Array.from(OP.needs), pop: Float32Array.from(OP.pop), poll, mood: dmood, lean: Float32Array.from(OP.lean), cmood: Float32Array.from(OP.mood), hardship: Float32Array.from(hardship) });
     if (OP.days.length === 1) OP.basePoll = poll;
     OP.k = k + 1;
   }
@@ -438,7 +438,9 @@
       for (let d = 0; d < C.D; d++) { const w = C.districts[d].residents; tot += w; m += op.mood[d] * w; PIDS.forEach((p, j) => (city[p] += op.poll[d * 4 + j] * w)); }
       PIDS.forEach((p) => (city[p] = rd(city[p] / tot * 100, 10)));
       out.city = { mood: rd(m / tot * 100, 1), poll: city };
-      out.rivalries = Object.keys(OP.rival).filter((key) => OP.rival[key] <= k).map((key) => { const [a, b] = key.split(':').map(Number); return { a: C.list[a].name, b: C.list[b].name, district: C.list[a].district, since: ymd(dayStart(OP.rival[key])) }; });
+      // the rivalries as they stood at the close of day k, not as the run stands now
+      const rv = op.rival || {};
+      out.rivalries = Object.keys(rv).map((key) => { const [a, b] = key.split(':').map(Number); return { a: C.list[a].name, b: C.list[b].name, district: C.list[a].district, since: ymd(dayStart(rv[key])) }; });
     }
     return out;
   }

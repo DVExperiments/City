@@ -12,7 +12,7 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '0.2.0';
+  const VERSION = '0.2.1';
   const MIN = 60000, H = 3600000, DAY = 86400000;
   const EPOCH = Date.UTC(2025, 11, 3);
   const PI = 3.141592653589793, TAU = 6.283185307179586;
@@ -644,12 +644,18 @@
       if (new Date(d).getUTCDate() === 1) emit(out, d + 9 * H, 'city.crowds', 2, 'gp:' + ymd(d), {}, 'Crowds pour into the Glacial Stadium for the Grand Prix');
     }
 
-    function ensure(toDay) { ensureTimelines(toDay); while (hist.day < toDay) { processDay(hist, hist.day, hist.events); hist.day += DAY; } }
+    // The running state as it stood at the start of each day, so an earlier day can still be asked about after the run
+    // has moved on: the answer for a moment never depends on what was asked before.
+    const startState = new Map();
+    const snapshot = () => ({ smog: hist.smog, peak: hist.peak, smogAlert: hist.smogAlert });
+    function ensure(toDay) { ensureTimelines(toDay); while (hist.day < toDay) { startState.set(hist.day, snapshot()); processDay(hist, hist.day, hist.events); hist.day += DAY; } }
+    /** The running state at the start of day d (d no later than the run). */
+    const stateOfDay = (d) => (d >= hist.day ? snapshot() : startState.get(d));
     function eventsBetween(from, to) {
       if (to < EPOCH || !ready()) return [];
       const today = dayOf(to);
       ensure(today);
-      const scratch = JSON.parse(JSON.stringify({ day: hist.day, smog: hist.smog, peak: hist.peak, smogAlert: hist.smogAlert })), partial = [];
+      const scratch = Object.assign({ day: today }, stateOfDay(today)), partial = [];
       processDay(scratch, today, partial);
       return hist.events.filter((e) => e.ms >= from && e.ms < today).concat(partial.filter((e) => e.ms >= from && e.ms <= to)).concat(glitchEvents(from, to)).sort((a, b) => a.ms - b.ms);
     }
@@ -671,7 +677,7 @@
       const tl = ensureTimelines(t);
       const sites = m.features.filter((f) => f.kind === 'site').map((f) => Object.assign({ id: f.id, type: f.type, name: f.name }, siteState(f, tl[SITE_FOR[f.type]], t)));
       const today = summarise(d, t);
-      const keep = 0.62, smog = rnd(hist.smog * keep + today.emissions / 160);
+      const keep = 0.62, smog = rnd(stateOfDay(d).smog * keep + today.emissions / 160);
       return { time: t, started: true, version: VERSION, grid: g, dark, ops, levels, sites, today, residents: m.residents, aqi: smog, air: aqiBand(smog), ships: shipsAt(t) };
     }
     return {

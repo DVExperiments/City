@@ -19,7 +19,7 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '0.3.0';
+  const VERSION = '0.3.1';
   const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const YEAR = 31557600000; // 365.25 days
   const EPOCH = Date.UTC(2025, 11, 3);
@@ -378,7 +378,9 @@
     const S = U().senate;
     const profiles = S && S.districtProfiles ? S.districtProfiles : map.districts.map(() => ({ env: 0, aes: 0 }));
     let support = { B: 0.36, V: 0.32, L: 0.32 }; // the Senate's founding baseline, until it publishes its own
-    if (S) { try { const ss = S.stateAt(t); if (ss.started && ss.support) support = ss.support; } catch (e) { /* keep the baseline */ } }
+    // the Senate's polling as the day began: the context is kept for the whole day, so it mustn't depend on which
+    // moment of the day happened to be asked about first
+    if (S) { try { const ss = S.stateAt(d); if (ss.started && ss.support) support = ss.support; } catch (e) { /* keep the baseline */ } }
     const ctx = { support, aqi: st.aqi || 0, air: st.air || 'Good', dark, parks, coal: st.levels ? st.levels['policy.coalPlants'] : 3, coalOps: st.ops ? st.ops.coal : 0, temp, rain, profiles };
     if (ctxCache.size > 120) ctxCache.clear();
     ctxCache.set(d, ctx);
@@ -766,6 +768,8 @@
     const yearStart = uniLastStart(t), lastGrad = uniLastGrad(t);
     const d = Math.floor(t / DAY) + ':' + yearStart + ':' + lastGrad; // a Pixel Year can turn within a day
     if (uniCache.has(d)) return uniCache.get(d);
+    // counted at the start of the stretch this key covers, so any moment within it gives the same figures
+    t = Math.max(dayOf(t), yearStart, lastGrad || 0);
     const map = renewedMap();
     const fac = {}; for (const f of FACULTIES) fac[f.id] = { id: f.id, name: f.name, course: f.course, roles: f.roles, students: 0, degree: 0, diploma: 0, graduates: 0, newThisYear: 0 };
     const out = { open: true, loans: 0, loanBook: 0, students: 0, graduates: 0, graduatesWorking: 0, graduatesThisYear: 0, startedThisYear: 0, byDistrict: map.districts.map((x) => ({ id: x.id, name: x.name, students: 0, graduates: 0 })), sampleStudents: [], sampleGraduates: [] };
@@ -812,6 +816,7 @@
     if (t < LIFE_START) return null;
     const d = Math.floor((t - LIFE_START) / DAY);
     if (labourCache.has(d)) return labourCache.get(d);
+    t = LIFE_START + d * DAY; // the Job Centre's figures for a day are counted at city midnight and kept for the day
     const map = renewedMap();
     const out = { employed: 0, looking: 0, away: 0, retired: 0, dream: 0, bySector: {}, byDistrict: map.districts.map((x) => ({ id: x.id, name: x.name, employed: 0, looking: 0 })), head: {}, queue: [] };
     for (const h of homes()) for (const m of residentsOfHome(h.i, t).members) {
@@ -916,7 +921,7 @@
     const d = dayOf(t);
     if (nameIndex.day !== d) {
       nameIndex.list = [];
-      for (const h of homes()) for (const m of residentsOfHome(h.i, t).members) if (t >= m.birth) nameIndex.list.push([m.id, named(character(m.id)).name.toLowerCase()]);
+      for (const h of homes()) for (const m of residentsOfHome(h.i, d).members) if (d >= m.birth) nameIndex.list.push([m.id, named(character(m.id)).name.toLowerCase()]); // the index as the day began
       nameIndex.day = d;
     }
     const out = [];
@@ -926,9 +931,12 @@
 
   // ---------------------------------------------------------------- the city in numbers
   const statCache = new Map();
+  // The day's figures are counted as the day begins (00:00 UTC) and kept for the day, so every moment of a day gives
+  // the same figures whichever was asked about first.
   function stats(t) {
     const d = dayOf(t);
     if (statCache.has(d)) return statCache.get(d);
+    t = d;
     const map = renewedMap();
     const ages = [], byD = map.districts.map((x) => ({ id: x.id, name: x.name, residents: 0, homes: 0, ages: [], children: 0, over65: 0 }));
     let households = 0;

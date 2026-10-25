@@ -18,6 +18,8 @@ Every resident of Pixel City, by name. Part of the City repo: `census.js` is the
 
 The Office opens on **2 November 2026**; its events start then.
 
+**One answer per moment.** The day's figures (population, ages, districts, the Job Centre's totals, the University's, the name index for search) are counted as the day begins and kept for the day: at 00:00 UTC for the census, at city midnight for the Job Centre. What residents think comes from the city as it stood the day before and the Senate's polling as the day began. So any moment gives the same answer whichever moments were asked about first.
+
 ## API (`window.PixelUniverse.census`)
 
 | Member | Returns |
