@@ -180,7 +180,7 @@
         st = C.stateAt(t); wx = W.sample(t);
         n++;
         const g = st.grid;
-        set('clock', 'City time ' + fSec.format(cityMs(t)) + (pixelDay(t) ? ' \u00b7 ' + pixelDay(t) : ''));
+        set('clock', fSec.format(cityMs(t)) + ' PCT' + (pixelDay(t) ? ' \u00b7 ' + pixelDay(t) : '')); // Pixel City Time
         { const ck = document.getElementById('clock'); if (ck) ck.title = clockTip(t); }
         set('barleft', esc(wx.cond) + ', ' + wx.temp.toFixed(1) + '\u00b0C. Air: ' + esc(st.air) + ' (' + st.aqi + ')');
         set('kicker', 'Pixel City, ' + esc(fDate.format(cityMs(t))) + '. ' + st.residents.toLocaleString() + ' residents.');
@@ -339,6 +339,7 @@
         '<dl class="facts" style="grid-template-columns:repeat(4,1fr);margin-bottom:28px">' + fact('A Pixel Year', 'One month', 'from one Grand Prix to the next') + fact('A pixel day', 'About two hours') +
         fact(on ? 'This year' : 'The first full year', on && p ? 'Year ' + p.year : 'Year 13', on && p ? 'day ' + (p.dayOfYear + 1) + ' of 360' : 'from 1 December 2026') + fact('A long life', 'About seven years') + '</dl>' +
         '<div class="prose"><p>Pixel City keeps two calendars. The clock keeps the day: the sun rises and sets by it, shifts start and finish by it, Pixel High rings its bell by it and the races start by it. A day in Pixel City is as long as a day anywhere.</p>' +
+        '<p>The clock keeps Pixel City Time (PCT). From the Renewal on 1 November 2026 it runs twelve hours ahead of UTC, so the sun is highest over the city at noon in New Zealand. Before the Renewal, Pixel City Time was UTC.</p>' +
         '<p>Lives keep the Pixel Calendar, which the city ' + (on ? 'adopted' : 'adopts') + ' on 1 December 2026. Under it, a year passes every month. The Grand Prix on the 1st is New Year\u2019s Day, and by the next one every resident is a year older. A pixel lit in March is old enough for school by August.</p>' +
         '<p>Everything else in a life keeps pace. Households come and go, careers rise and turn, and Pixel High and the University fit a full school year into a month. The seasons follow: summer arrives with the Grand Prix, and winter sets in around the middle of the month.</p>' +
         '<p>Some things keep the clock\u2019s calendar. The Senate sits every weekday and is elected twice a year, and the Exchange and the Bank quote their prices and rates by the year as you know it.</p>' +
