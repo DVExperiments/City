@@ -125,7 +125,7 @@
       hh.members.forEach((mem, mi) => {
         if (H0 < mem.birth) return;
         if (seeded('shown:' + mem.id)() >= SHOWN) return; // decided first: it's cheap, and most residents aren't drawn
-        const age = Math.floor((H0 - mem.birth) / 31557600000);
+        const age = K.ageAt ? K.ageAt(mem.birth, H0) : Math.floor((H0 - mem.birth) / 31557600000); // on the life clock (the Pixel Calendar)
         if (age < 4) return; // the very young stay with a grown-up
         const r = seeded(mem.id + ':' + dateKey);
         const door = { x: home.x + 0.3 + (mi % 3) * 0.2, y: home.y + 0.85 };

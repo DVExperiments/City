@@ -11,8 +11,8 @@ Every resident of Pixel City, by name. Part of the City repo: `census.js` is the
 ## The people
 
 - **Homes.** Houses hold 6 residents (split into homes of 1 to 6), apartment blocks 34 (flats of 1 to 4), and flats above shops 2. 35,484 homes in all, each with a street address.
-- **Households.** Each home is lived in by a sequence of households. A household stays between 2 and 24 years, then leaves the city and a new one arrives, about 20 a day. Households are singles, couples, a parent and child, families (sometimes with a grandparent) or flatmates.
-- **Residents.** A name, birthday, colour, five traits (brightness, sharpness, warmth, flicker, saturation), a favourite Glacial pixel, two hobbies, a hope, a dream job and a quirk. Ages run in real years.
+- **Households.** Each home is lived in by a sequence of households. A household stays between 2 and 24 years, then leaves the city and a new one arrives: about 20 a day before the Pixel Calendar, and about 140 a day after it, since tenancies are counted in Pixel Years. Households are singles, couples, a parent and child, families (sometimes with a grandparent) or flatmates.
+- **Residents.** A name, birthday, colour, five traits (brightness, sharpness, warmth, flicker, saturation), a favourite Glacial pixel, two hobbies, a hope, a dream job and a quirk. Ages run on the life clock: in real years until 1 December 2026, and from then a year every Pixel Year (each calendar month). From then the file shows a pixel birthday, the day of the Pixel Year on which their age goes up (`pixelBirthday`).
 - **Opinions.** Worked out at any moment from the city as it was the day before: the air quality, blackouts in their district over the last week, parks in their district, the coal plant law, and the weather, weighted by personality and district character. From that come a mood (content, uneasy, unhappy), a ranked list of concerns, a quote, and a party leaning anchored to the Senate's own polling.
 - **The citizens' panel.** Every Monday, 800 adults chosen at random. It has run since the city began, so its history reaches back to December 2025.
 
@@ -30,6 +30,7 @@ The Office opens on **2 November 2026**; its events start then.
 | `search(name, t, limit)` | Residents whose names contain the text |
 | `panelAt(t)`, `panelsBetween(from, to)` | The weekly panel |
 | `householdAt(homeIndex, t)`, `homes()`, `movesBetween(from, to)` | Homes and who lives in them |
+| `ageAt(birth, t)`, `lifeClock` | Age on the life clock, for any site that shows one; `lifeClock.toLife`, `fromLife` and `later(t, span)` |
 | `eventsBetween(from, to)` | `census.opens`, `census.panel` (Mondays, 09:00 UTC) and `census.moves` (daily) |
 
 Resident ids look like `p1234-2-0`: home 1234, its third household, first member. They never change.

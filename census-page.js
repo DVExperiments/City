@@ -126,10 +126,10 @@
     document.title = p.name + ' – Census – Pixel City';
     let h = profileHead(p);
     if (!p.born) h += '<p class="banner">Not yet lit.</p>';
-    else if (p.goneDark) h += '<p class="banner">' + esc(p.name) + ' went dark on ' + fYear.format(p.dark) + ', aged ' + Math.floor((p.dark - p.birth) / 31557600000) + '. The Census Office keeps the file.</p>';
+    else if (p.goneDark) h += '<p class="banner">' + esc(p.name) + ' went dark on ' + fYear.format(p.dark) + ', aged ' + K.ageAt(p.birth, p.dark) + '. The Census Office keeps the file.</p>';
     else if (!p.present) h += '<p class="banner">' + esc(p.name) + ' and their household left Pixel City on ' + fYear.format(p.movesOut) + '. The Census Office keeps the file.</p>';
     if (p.expecting && p.present) h += '<p class="banner">The household is expecting a new pixel.</p>';
-    h += '<dl class="facts">' + fact('Age', p.age) + fact('Birthday', esc(p.birthday)) + fact('Address', esc(p.address)) +
+    h += '<dl class="facts">' + fact('Age', p.age) + fact('Birthday', esc(p.pixelBirthday && t >= Date.UTC(2026, 11, 1) ? p.pixelBirthday : p.birthday), p.pixelBirthday && t >= Date.UTC(2026, 11, 1) ? 'of every Pixel Year' : '') + fact('Address', esc(p.address)) +
       fact(p.lit ? 'Lit on' : 'Living here since', p.lit ? fYear.format(p.birth) : p.sinceFounding ? 'The city’s founding' : fYear.format(p.movedIn)) + fact('Household', HOUSEHOLD[p.householdKind]) + fact('Stage of life', esc(p.stage)) + '</dl>';
     h += '<div class="profile-grid"><div><h2>Character</h2><dl>' + K.TRAITS.map(([k, label, lo, hi]) => '<div class="trait"><dt>' + label + '</dt><dd><span class="bar" style="--v:' + p.traits[k] + ';--c:' + p.color + '"></span></dd></div>' +
       '<p class="axis-labels"><span>' + lo + '</span><span>' + hi + '</span></p>').join('') + '</dl>' +

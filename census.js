@@ -19,7 +19,7 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '0.2.0';
+  const VERSION = '0.3.0';
   const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const YEAR = 31557600000; // 365.25 days
   const EPOCH = Date.UTC(2025, 11, 3);
@@ -59,6 +59,19 @@
   // start of working lives it is a hard dependency. Its register of businesses (employers()) does not depend on it.
   const COM = () => U().commerce;
   const fullReady = () => ready() && !!(COM() && COM().ready()) && !!U().society;
+
+  // ---------------------------------------------------------------- the life clock (the Pixel Calendar)
+  // From 1 December 2026 lives run on the Pixel Calendar: a pixel ages a year every Pixel Year (one calendar month).
+  // Every length of a life (ages, lifespans, tenancies, careers, courses, loan terms, the months in which a household
+  // might light a new pixel) is measured on the Weather Bureau's life clock, which before the adoption is the ordinary
+  // clock, so the census's history is exactly as it was. Spells and dates handed to other sites stay real moments.
+  // The Weather Bureau comes first in every page's chain (City needs it), so the clock is always here.
+  const PX = () => U().climate.pixel;
+  const ADOPTED = Date.UTC(2026, 11, 1);
+  const toL = (t) => (t < ADOPTED ? t : PX().toLife(t));
+  const fromL = (l) => (l < ADOPTED ? l : PX().fromLife(l));
+  /** The real moment `span` of life-clock time after t. */
+  const later = (t, span) => fromL(toL(t) + span);
 
   // ---------------------------------------------------------------- names and character
   const FIRST = ['Ada', 'Amber', 'Arlo', 'Ash', 'Bea', 'Bit', 'Blue', 'Bram', 'Cass', 'Cyan', 'Dot', 'Edie', 'Ember', 'Fen', 'Flint', 'Glint', 'Gray', 'Halo', 'Hex', 'Ines',
@@ -142,18 +155,21 @@
 
   // ---------------------------------------------------------------- tenancies: who lives in a home, and since when
   function tenancyLength(hi, k) { const r = seeded('lease:' + hi + ':' + k); const u = r(); return Math.floor((2 + u * u * 22) * YEAR) + Math.floor(r() * 300) * DAY; }
+  // tenancies are measured on the life clock: households come and go twelve times as often under the Pixel Calendar
   function tenancyAt(hi, t) {
+    const lt = toL(t);
     let len = tenancyLength(hi, 0);
     let start = EPOCH - Math.floor(seeded('lease0:' + hi)() * len), k = 0;
-    while (start + len <= t) { start += len; k++; len = tenancyLength(hi, k); }
-    return { k, start, end: start + len };
+    while (start + len <= lt) { start += len; k++; len = tenancyLength(hi, k); }
+    return { k, start: fromL(start), end: fromL(start + len) };
   }
   /** Every change of household in [from, to): [time, homeIndex, newTenancy]. */
   function movesBetween(from, to) {
     const out = [];
     for (const h of homes()) {
+      const lf = toL(from), lt = toL(to);
       let len = tenancyLength(h.i, 0), start = EPOCH - Math.floor(seeded('lease0:' + h.i)() * len), k = 0;
-      while (start + len < to) { start += len; k++; if (start >= from) out.push([start, h.i, k]); len = tenancyLength(h.i, k); }
+      while (start + len < lt) { start += len; k++; if (start >= lf) out.push([fromL(start), h.i, k]); len = tenancyLength(h.i, k); }
     }
     out.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
     return out;
@@ -165,7 +181,7 @@
     const key = hi + ':' + k;
     if (hhCache.has(key)) return hhCache.get(key);
     const home = homes()[hi], ten = { k, start: 0, end: 0 };
-    { let len = tenancyLength(hi, 0), start = EPOCH - Math.floor(seeded('lease0:' + hi)() * len); for (let j = 0; j < k; j++) { start += len; len = tenancyLength(hi, j + 1); } ten.start = start; ten.end = start + len; }
+    { let len = tenancyLength(hi, 0), start = EPOCH - Math.floor(seeded('lease0:' + hi)() * len); for (let j = 0; j < k; j++) { start += len; len = tenancyLength(hi, j + 1); } ten.start = start; ten.end = start + len; } // on the life clock
     const r = seeded('household:' + key);
     const surname = pick(r, LAST);
     const n = home.size, members = [];
@@ -188,14 +204,22 @@
     } else { kind = 'flatmates'; for (let c = 0; c < n; c++) add('flatmate', 19 + Math.floor(r() * 20), c > 0); }
     const hh = { home: hi, k, start: ten.start, end: ten.end, surname, kind, members: members.map((m, i) => {
       const pr = seeded('person:' + key + ':' + i);
-      const birth = ten.start - m.ageAtStart * YEAR - Math.floor(pr() * 365) * DAY;
+      const birth = fromL(ten.start - m.ageAtStart * YEAR - Math.floor(pr() * 365) * DAY);
       return { id: 'p' + hi + '-' + k + '-' + i, role: m.role, surname: m.surname, birth };
     }) };
+    hh.start = fromL(ten.start); hh.end = fromL(ten.end);
     if (hhCache.size > 6000) hhCache.clear();
     hhCache.set(key, hh);
     return hh;
   }
-  const ageAt = (birth, t) => Math.floor((t - birth) / YEAR);
+  /** Age in whole years on the life clock: under the Pixel Calendar, a year older every Pixel Year. */
+  const ageAt = (birth, t) => Math.floor((toL(t) - toL(birth)) / YEAR);
+  /** The day of the Pixel Year (0 to 359) on which a pixel's age goes up, and it as words. */
+  const PMONTHS = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth', 'Eleventh', 'Twelfth'];
+  function pixelBirthday(birth) {
+    const off = (((toL(birth) - ADOPTED) % YEAR) + YEAR) % YEAR, doy = Math.floor((off * 360) / YEAR);
+    return { dayOfYear: doy, month: Math.floor(doy / 30) + 1, day: (doy % 30) + 1, text: 'Day ' + ((doy % 30) + 1) + ' of the ' + PMONTHS[Math.floor(doy / 30)] + ' Month' };
+  }
 
   // ================================================================ the Life Cycle
   // From 00:00 on 1 December 2026, city time, pixels are lit (born) and go dark (die). Before then the census is
@@ -203,6 +227,8 @@
   // new pixels come from a monthly chance shaped by work, room at home, age, children, the air, parks and the season.
   const LIFE_START = Date.UTC(2026, 10, 30, 12); // city midnight, 1 December 2026
   const MONTH = YEAR / 12;
+  /** The start of month n of the Life Cycle on the life clock: a pixel month (about two and a half days) under the Pixel Calendar. */
+  const lifeMonth = (n) => fromL(LIFE_START + Math.floor(n * MONTH));
   const GESTATION = 280 * DAY;
   // the chance of going dark within a year, by age
   const Q = [];
@@ -212,11 +238,11 @@
   function darkAt(id, birth) {
     if (darkCache.has(id)) return darkCache.get(id);
     const from = birth > LIFE_START ? birth : LIFE_START;
-    const a0 = Math.floor((from - birth) / YEAR);
+    const a0 = Math.floor((toL(from) - toL(birth)) / YEAR);
     const u = seeded('dark:' + id)(), f = seeded('dark-day:' + id)();
     let s = 1, x = a0;
     while (x < 115) { s *= 1 - Q[x]; if (s < u) break; x++; }
-    const when = from + Math.floor((x - a0 + f) * YEAR);
+    const when = later(from, Math.floor((x - a0 + f) * YEAR));
     if (darkCache.size > 200000) darkCache.clear();
     darkCache.set(id, when);
     return when;
@@ -227,7 +253,7 @@
   const monthCache = new Map();
   function monthConditions(n) {
     if (monthCache.has(n)) return monthCache.get(n);
-    const t = LIFE_START + Math.floor(n * MONTH);
+    const t = lifeMonth(n);
     const out = { aqi: 60, parks: null };
     try {
       const st = C().stateAt(t - DAY), map = renewedMap();
@@ -247,11 +273,11 @@
     if (!rec) { rec = { n: null, list: [], expecting: null }; litCache.set(key, rec); if (litCache.size > 60000) { litCache.clear(); litCache.set(key, rec); } }
     const adults = hh.members.filter((m) => m.role === 'adult');
     if (adults.length !== 2) return rec.list;
-    const first = Math.ceil(((hh.start > LIFE_START - GESTATION ? hh.start : LIFE_START - GESTATION) - LIFE_START) / MONTH);
+    const hs = toL(hh.start), first = Math.ceil(((hs > LIFE_START - GESTATION ? hs : LIFE_START - GESTATION) - LIFE_START) / MONTH);
     if (rec.n === null) rec.n = first;
     const home = HOMES[hi];
     while (true) {
-      const mt = LIFE_START + Math.floor(rec.n * MONTH);
+      const mt = lifeMonth(rec.n);
       if (mt > t || mt >= hh.end) break;
       const n = rec.n++;
       if (rec.expecting && mt < rec.expecting) continue;
@@ -271,15 +297,15 @@
       const cond = n >= 0 ? monthConditions(n) : { aqi: 60, parks: null };
       const air = cond.aqi > 150 ? 0.8 : cond.aqi > 100 ? 0.92 : 1;
       const green = cond.parks && cond.parks[home.district] > 0 ? 1.08 : 1;
-      const mon = new Date(mt + 12 * H).getUTCMonth();
+      const mon = mt < ADOPTED ? new Date(mt + 12 * H).getUTCMonth() : PX().time(mt).month - 1; // the pixel month, under the Pixel Calendar
       const season = mon >= 8 || mon <= 1 ? 1.08 : 0.95;
       const p = 0.052 * room * age * kidsF * work * air * green * season;
       if (u >= p) continue;
-      const conceived = mt + Math.floor(seeded('lit-day:' + key + ':' + n)() * 28) * DAY;
-      const birth = conceived + GESTATION + Math.floor((seeded('lit-due:' + key + ':' + n)() - 0.5) * 20) * DAY;
+      const conceived = later(mt, Math.floor(seeded('lit-day:' + key + ':' + n)() * 28) * DAY);
+      const birth = later(conceived, GESTATION + Math.floor((seeded('lit-due:' + key + ':' + n)() - 0.5) * 20) * DAY);
       if (birth >= hh.end) break; // they will have moved away by then
       rec.list.push({ id: 'p' + hi + '-' + k + '-b' + rec.list.length, birth, conceived, role: 'child', surname: hh.surname });
-      rec.expecting = birth + 90 * DAY; // a little while before the next
+      rec.expecting = later(birth, 90 * DAY); // a little while before the next
     }
     return rec.list;
   }
@@ -304,7 +330,7 @@
     if (p.b === undefined) return household(p.hi, p.k).members[p.i];
     // a lit pixel: work out the household's new pixels just far enough to find this one
     const hh = household(p.hi, p.k);
-    for (let t = LIFE_START + YEAR; !litIn(p.hi, p.k)[p.b] && t < hh.end + YEAR; t += YEAR) litUntil(p.hi, p.k, t);
+    for (let l = LIFE_START + YEAR, end = toL(hh.end) + YEAR; !litIn(p.hi, p.k)[p.b] && l < end; l += YEAR) litUntil(p.hi, p.k, fromL(l));
     return litIn(p.hi, p.k)[p.b];
   }
 
@@ -325,6 +351,7 @@
     const leanNoise = { B: r() * 0.3, V: r() * 0.3, L: r() * 0.3 };
     return {
       id, first: pick(r, FIRST), surname: mem.surname, name: '', color: colorFor(r), role: mem.role, birth: mem.birth,
+      pixelBirthday: pixelBirthday(mem.birth).text,
       birthday: new Date(mem.birth).getUTCDate() + ' ' + ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][new Date(mem.birth).getUTCMonth()],
       home: home.i, address: home.address, district: home.district, districtName: renewedMap().districts[home.district].name, homeKind: home.kind,
       movedIn: p.b !== undefined ? mem.birth : hh.start, movesOut: hh.end, household: hh.members.map((m) => m.id), householdKind: hh.kind, lit: p.b !== undefined,
@@ -531,7 +558,15 @@
   // School leavers often go, adults sometimes, and pixels out of work most of all. A degree takes three years, a diploma
   // one (older students take diplomas). What they read follows their dream job. Graduates move up: in a trade their
   // faculty knows, they take a senior role; anywhere else, a senior version of the job. Either way they're paid more.
-  const UNI_OPENS = Date.UTC(2027, 2, 1), UNI_APPLY = Date.UTC(2026, 10, 1);
+  // Under the Pixel Calendar the University's year is a Pixel Year: it opens on 1 March 2027 (the first day of Year 16),
+  // and from then each year begins on the first day of the third pixel month and graduates on the first day of the
+  // twelfth. Applications open a Pixel Year before it opens.
+  const UNI_OPENS = Date.UTC(2027, 2, 1), UNI_APPLY = Date.UTC(2027, 1, 1), UNI_YEAR0 = 16;
+  const uniStart = (y) => (y <= UNI_YEAR0 ? UNI_OPENS : PX().moment(y, 60));
+  const uniGrad = (y) => PX().moment(y, 330);
+  function uniNextStart(S) { let y = S < UNI_OPENS ? UNI_YEAR0 : PX().time(S).year; while (uniStart(y) < S) y++; return y; }
+  function uniLastStart(t) { let y = PX().time(t).year; while (y > UNI_YEAR0 && uniStart(y) > t) y--; return uniStart(y); }
+  function uniLastGrad(t) { let y = PX().time(t).year; while (y >= UNI_YEAR0 && uniGrad(y) > t) y--; return y >= UNI_YEAR0 ? uniGrad(y) : null; }
   const FACULTIES = [
     { id: 'rendering', name: 'School of Rendering', course: 'Rendering Engineering', sector: 'factory', roles: ['render line manager', 'chief texture engineer', 'plant director'] },
     { id: 'colour', name: 'Faculty of Colour', course: 'Palette Science and Colour Theory', sector: 'shop', roles: ['head of palette', 'colour director', 'chief colourist'] },
@@ -575,11 +610,13 @@
     const key = 'mortgage:' + ch.home + ':' + ch.movedIn;
     if (hash(key) / 4294967296 >= 0.6) return null;
     let rate = 4; try { const h = U().bank && U().bank.historyBetween(ch.movedIn - 2 * DAY, ch.movedIn); if (h && h.length) rate = h[h.length - 1].rate; } catch (e) { /* the Bank's books aren't here */ }
-    return { amount: Math.round((30000 + (hash(key + ':a') % 40000)) / 100) * 100, rate: Math.round((rate + 1.8) * 100) / 100, from: ch.movedIn, until: ch.movedIn + 25 * YEAR };
+    return { amount: Math.round((30000 + (hash(key + ':a') % 40000)) / 100) * 100, rate: Math.round((rate + 1.8) * 100) / 100, from: ch.movedIn, until: later(ch.movedIn, 25 * YEAR) }; // 25 Pixel Years
   }
   function quitAt(id, birth, district, sp, c, from, to) { // the first month an unhappy pixel walks out, if any
     const e = employers().byId[sp.employer]; if (!e) return null;
-    for (let m = sp.from + 30 * DAY; m <= to; m += 30 * DAY) {
+    for (let lm = toL(sp.from) + 30 * DAY; ; lm += 30 * DAY) { // once a pixel month
+      const m = fromL(lm);
+      if (m > to) break;
       if (m <= from || m < WELL_START) continue;
       const wb = wellbeingOf(id, birth, district, m, sp, c); if (!wb) continue;
       const sat = 0.5 + ((sp.wage || 0) / SECTOR[e.sector].wage - 1) * 1.5 + (sp.dream ? 0.15 : 0) + (wb.wellbeing - 0.75);
@@ -598,7 +635,7 @@
       careerCache.set(id, c);
       if (careerCache.size > 120000) { careerCache.clear(); careerCache.set(id, c); }
     }
-    const retireAt = birth + 67 * YEAR;
+    const retireAt = later(birth, 67 * YEAR);
     while (true) {
       // finish checking an open job at a site, as far as t
       const last = c.spells[c.spells.length - 1];
@@ -609,6 +646,7 @@
         else {
           for (; x + 7 * DAY <= upTo; x += 7 * DAY) if (!operating(e, x + 7 * DAY)) break;
           if (x + 7 * DAY <= upTo) { let y = x; while (y < x + 7 * DAY && operating(e, y + DAY)) y += DAY; closedAt = y + DAY; } // closed this week: find the day
+          else { let y = x; while (y + DAY <= upTo && operating(e, y + DAY)) y += DAY; if (y + DAY <= upTo) closedAt = y + DAY; } // or in the days since the last full week, so the answer at t doesn't depend on what was asked before
         }
         if (e.kind === 'business') { // an unhappy pixel may walk out before anything else happens
           const q = quitAt(id, birth, district, last, c, last.checked, closedAt !== null ? closedAt : upTo);
@@ -618,32 +656,32 @@
           last.to = closedAt; last.reason = e.kind === 'business' ? 'Laid off when ' + last.name + ' closed' : e.kind === 'site' ? 'Laid off when ' + e.name + ' closed' : 'The building was finished';
           delete last.pending;
           const r = seeded('laidoff:' + id + ':' + c.k);
-          const look = Math.floor((2 + r() * 6) * MONTH);
-          c.spells.push({ from: last.to, to: last.to + look, status: 'looking', reason: 'Laid off' });
-          c.next = last.to + look;
+          const look = later(last.to, Math.floor((2 + r() * 6) * MONTH));
+          c.spells.push({ from: last.to, to: look, status: 'looking', reason: 'Laid off' });
+          c.next = look;
         } else if (last.planned <= t) { delete last.pending; c.next = last.planned; }
         else { last.checked = e.kind === 'business' ? upTo : x; return c.spells; } // still open: we can't know more until t moves on
       }
       if (c.next > t || c.k >= 200) break;
       const S = c.next, k = c.k++;
       const r = seeded('career:' + id + ':' + k);
-      const age = (S - birth) / YEAR;
+      const age = (toL(S) - toL(birth)) / YEAR;
       if (S >= retireAt) { c.spells.push({ from: S, to: Infinity, status: 'retired' }); c.next = Infinity; break; }
-      if (age < 18) { c.spells.push({ from: S, to: birth + 18 * YEAR, status: 'young' }); c.next = birth + 18 * YEAR; continue; }
-      if (S >= UNI_APPLY && !c.degree && age < 60) { // applications open with the Renewal, for the first year in March 2027 // Pixel University: its own seed, so nothing else in a life is drawn differently
+      if (age < 18) { const adult = later(birth, 18 * YEAR); c.spells.push({ from: S, to: adult, status: 'young' }); c.next = adult; continue; }
+      if (S >= UNI_APPLY && !c.degree && age < 60) { // applications open a Pixel Year before the first year, in March 2027 // Pixel University: its own seed, so nothing else in a life is drawn differently
         const ru = seeded('uni:' + id + ':' + k), prev = c.spells[c.spells.length - 1];
-        const unhappy = c.unhappy && S - c.unhappy < 60 * DAY && age < 50; // walked out recently: time to retrain?
+        const unhappy = c.unhappy && toL(S) - toL(c.unhappy) < 60 * DAY && age < 50; // walked out recently: time to retrain?
         const chance = unhappy ? 0.5 : age < 25 ? 0.3 : prev && prev.status === 'looking' ? 0.14 : 0.025;
         if (ru() < chance) {
-          // everyone starts together on 1 March, and finishes on 1 December, graduation day
-          const fac = chooseFaculty(id, ru), years = age < 25 ? 3 : 1, y0 = new Date(S).getUTCFullYear(), start = S <= Date.UTC(y0, 2, 1) ? Date.UTC(y0, 2, 1) : Date.UTC(y0 + 1, 2, 1);
-          const y1 = new Date(start).getUTCFullYear() + years - 1, end = Date.UTC(y1, 11, 1);
+          // everyone starts together at the start of the University's Pixel Year, and finishes on graduation day
+          const fac = chooseFaculty(id, ru), years = age < 25 ? 3 : 1, y0 = uniNextStart(S), start = uniStart(y0);
+          const end = uniGrad(y0 + years - 1);
           if (end < retireAt) {
             if (start > S) c.spells.push({ from: S, to: start, status: 'away', reason: 'Waiting to start at Pixel University' });
             const studying = { from: start, to: end, status: 'studying', faculty: fac.id, course: fac.course, award: years === 3 ? 'degree' : 'diploma', reason: 'Studying ' + fac.course + ' at Pixel University' };
             if (S >= WELL_START) { // fees on a loan from the Bank, at its rate on the day, repaid over five years from graduation
               let rate = 4; try { const h = U().bank && U().bank.historyBetween(S - 2 * DAY, S); if (h && h.length) rate = h[h.length - 1].rate; } catch (e2) { /* the Bank's books aren't here */ }
-              c.loan = { amount: years * 4000, rate: Math.round((rate + 1.5) * 100) / 100, from: end, until: end + 5 * YEAR };
+              c.loan = { amount: years * 4000, rate: Math.round((rate + 1.5) * 100) / 100, from: end, until: later(end, 5 * YEAR) }; // five Pixel Years
               studying.reason += ', on a loan of ' + (years * 4000).toLocaleString('en') + ' W at ' + c.loan.rate + '%';
               if (unhappy) studying.reason += ', after leaving a job they didn\u2019t like';
             }
@@ -659,15 +697,15 @@
       const part = age < 22 ? 0.5 : age < 60 ? 0.87 : 0.6;
       if (r() >= part) {
         const why = age < 22 ? 'Studying' : age >= 60 ? 'Retired early' : r() < 0.5 ? 'Keeping house' : 'Caring for family';
-        const end = Math.min(S + Math.floor(len * 0.6), retireAt);
+        const end = Math.min(later(S, Math.floor(len * 0.6)), retireAt);
         if (why === 'Retired early') { c.spells.push({ from: S, to: Infinity, status: 'retired', reason: why }); c.next = Infinity; break; }
         c.spells.push({ from: S, to: end, status: 'away', reason: why });
         c.next = end;
         continue;
       }
-      if (c.unhappy && S - c.unhappy < 60 * DAY) { // walked out, didn't retrain: a spell looking for something better
+      if (c.unhappy && toL(S) - toL(c.unhappy) < 60 * DAY) { // walked out, didn't retrain: a spell looking for something better
         c.unhappy = 0;
-        const end = S + Math.floor((1 + r() * 2) * MONTH);
+        const end = later(S, Math.floor((1 + r() * 2) * MONTH));
         c.spells.push({ from: S, to: end, status: 'looking', reason: 'Looking for something better' });
         c.next = end;
         continue;
@@ -675,7 +713,7 @@
       const open = openIn(monthIndex(S > LIFE_START ? S : LIFE_START));
       const scarce = 1 - open.jobs / (workforce() * 1.02);
       if (r() < (scarce > 0.03 ? scarce : 0.03)) {
-        const end = S + Math.floor((1 + r() * 6) * MONTH * (scarce > 0.15 ? 1.6 : 1));
+        const end = later(S, Math.floor((1 + r() * 6) * MONTH * (scarce > 0.15 ? 1.6 : 1)));
         c.spells.push({ from: S, to: end, status: 'looking', reason: 'Between jobs' });
         c.next = end;
         continue;
@@ -685,7 +723,7 @@
       // a business that has closed since the month began isn't hiring: back to looking
       const occ = e.kind === 'business' ? COM().occupantAt(e.id, S) : null;
       if (e.kind === 'business' && !occ) {
-        const end = S + Math.floor((0.5 + r() * 2) * MONTH);
+        const end = later(S, Math.floor((0.5 + r() * 2) * MONTH));
         c.spells.push({ from: S, to: end, status: 'looking', reason: 'Between jobs' });
         c.next = end;
         continue;
@@ -698,7 +736,7 @@
         title = fac.sector === e.sector ? fac.roles[hash('role:' + id + ':' + k) % fac.roles.length] : 'senior ' + title;
         wage = Math.round(wage * (c.degree.award === 'degree' ? 1.3 : 1.15) / 10) * 10;
       }
-      const planned = Math.min(S + len, retireAt);
+      const planned = Math.min(later(S, len), retireAt);
       const spell = { from: S, to: planned, status: 'employed', employer: e.id, title, wage, dream: title === want };
       if (occ) { spell.name = occ.name; spell.gen = occ.generation; }
       c.spells.push(spell);
@@ -725,17 +763,17 @@
   const uniCache = new Map();
   function universityAt(t) {
     if (t < UNI_OPENS) return { open: false, opens: UNI_OPENS, faculties: FACULTIES.map((f) => ({ id: f.id, name: f.name, course: f.course, roles: f.roles })) };
-    const d = Math.floor(t / DAY);
+    const yearStart = uniLastStart(t), lastGrad = uniLastGrad(t);
+    const d = Math.floor(t / DAY) + ':' + yearStart + ':' + lastGrad; // a Pixel Year can turn within a day
     if (uniCache.has(d)) return uniCache.get(d);
     const map = renewedMap();
     const fac = {}; for (const f of FACULTIES) fac[f.id] = { id: f.id, name: f.name, course: f.course, roles: f.roles, students: 0, degree: 0, diploma: 0, graduates: 0, newThisYear: 0 };
     const out = { open: true, loans: 0, loanBook: 0, students: 0, graduates: 0, graduatesWorking: 0, graduatesThisYear: 0, startedThisYear: 0, byDistrict: map.districts.map((x) => ({ id: x.id, name: x.name, students: 0, graduates: 0 })), sampleStudents: [], sampleGraduates: [] };
-    const yr = new Date(t).getUTCFullYear(), yearStart = t >= Date.UTC(yr, 2, 1) ? Date.UTC(yr, 2, 1) : Date.UTC(yr - 1, 2, 1), lastGrad = t >= Date.UTC(yr, 11, 1) ? Date.UTC(yr, 11, 1) : Date.UTC(yr - 1, 11, 1);
     for (const h of homes()) for (const m of residentsOfHome(h.i, t).members) {
       if (ageAt(m.birth, t) < 18) continue;
       const spells = careerUntil(m.id, m.birth, h.district, t), c = careerCache.get(m.id);
       if (!c || !c.degree) continue;
-      if (c.loan && t < c.loan.until) { out.loans++; out.loanBook += t < c.loan.from ? c.loan.amount : c.loan.amount * (c.loan.until - t) / (c.loan.until - c.loan.from); }
+      if (c.loan && t < c.loan.until) { out.loans++; out.loanBook += t < c.loan.from ? c.loan.amount : c.loan.amount * (toL(c.loan.until) - toL(t)) / (toL(c.loan.until) - toL(c.loan.from)); }
       const now = spells.find((sp) => sp.from <= t && t < sp.to), g = c.degree, F = fac[g.faculty];
       const started = g.started;
       if (started > t) continue;
@@ -751,19 +789,20 @@
     uniCache.set(d, out); if (uniCache.size > 6) uniCache.delete(uniCache.keys().next().value);
     return out;
   }
-  /** The University's calendar: it opens; each 1 March a new year begins; each 1 December, graduation. */
+  /** The University's calendar: it opens; each Pixel Year a new year begins (the third pixel month) and graduates (the twelfth). */
   function universityEvents(from, to) {
     const out = [];
-    for (let y = 2027; y <= new Date(to).getUTCFullYear(); y++) {
-      const term = Date.UTC(y, 2, 1) - 3.5 * H, grad = Date.UTC(y, 11, 1, 2); // 8:30am 1 March and 3pm 1 December, city time
+    if (to < UNI_OPENS - DAY) return out;
+    for (let y = UNI_YEAR0; y <= PX().time(to).year; y++) {
+      const begins = uniStart(y), term = y === UNI_YEAR0 ? begins - 3.5 * H : begins, grad = uniGrad(y); // the opening at 8:30am city time
       if (term >= from && term < to) {
-        const u = universityAt(Date.UTC(y, 2, 1) + DAY);
-        out.push({ id: 'university:term:' + y, time: iso(term), ms: term, source: 'university', type: y === 2027 ? 'university.opens' : 'university.term', importance: y === 2027 ? 4 : 2, data: { started: u.startedThisYear },
-          headline: y === 2027 ? 'Pixel University opens its doors, and ' + u.startedThisYear.toLocaleString('en') + ' pixels begin their studies' : 'A new year begins at Pixel University: ' + u.startedThisYear.toLocaleString('en') + ' pixels start courses' });
+        const u = universityAt(begins + H);
+        out.push({ id: 'university:term:Y' + y, time: iso(term), ms: term, source: 'university', type: y === UNI_YEAR0 ? 'university.opens' : 'university.term', importance: y === UNI_YEAR0 ? 4 : 2, data: { started: u.startedThisYear, pixelYear: y },
+          headline: y === UNI_YEAR0 ? 'Pixel University opens its doors, and ' + u.startedThisYear.toLocaleString('en') + ' pixels begin their studies' : 'Year ' + y + ' begins at Pixel University: ' + u.startedThisYear.toLocaleString('en') + ' pixels start courses' });
       }
       if (grad >= from && grad < to) {
         const u = universityAt(grad);
-        out.push({ id: 'university:graduation:' + y, time: iso(grad), ms: grad, source: 'university', type: 'university.graduation', importance: 3, data: { graduates: u.graduatesThisYear },
+        out.push({ id: 'university:graduation:Y' + y, time: iso(grad), ms: grad, source: 'university', type: 'university.graduation', importance: 3, data: { graduates: u.graduatesThisYear, pixelYear: y },
           headline: 'Graduation day at Pixel University: ' + u.graduatesThisYear.toLocaleString('en') + ' pixels collect their degrees and diplomas' });
       }
     }
@@ -1081,7 +1120,7 @@
     version: VERSION, source: 'jobs', startDate: ymd(LIFE_START + 12 * H), start: LIFE_START, opens: JOB_CENTRE_OPENS, ready: fullReady, registryReady: ready, SECTOR,
     wellbeingOf: (id, t) => { if (!fullReady()) return null; const c = character(id); if (!c) return null; const sp = careerUntil(id, c.birth, c.district, t).find((x) => x.from <= t && t < x.to); const cc = Object.assign({}, careerCache.get(id) || {}, { mortgage: mortgageOf(c) }); return wellbeingOf(id, c.birth, c.district, t, sp, cc); },
     mortgageOf: (id) => { const c = character(id); return c ? mortgageOf(c) : null; },
-    loanOf: (id, t) => { const c = careerCache.get(id); return c && c.loan && c.loan.from - 3 * YEAR <= t ? Object.assign({}, c.loan) : null; },
+    loanOf: (id, t) => { const c = careerCache.get(id); return c && c.loan && toL(c.loan.from) - 3 * YEAR <= toL(t) ? Object.assign({}, c.loan) : null; },
     universityAt: (t) => (fullReady() ? universityAt(t) : null), universityEventsBetween: (from, to) => (fullReady() ? universityEvents(from, to) : []), universityOpens: UNI_OPENS, FACULTIES,
     employers: () => (ready() ? employers() : []), operating,
     /** What a resident does for a living at t: { status: 'employed' | 'looking' | 'away' | 'retired' | 'young', employer, employerName, title, wage, from, to, dream, reason } */
@@ -1101,7 +1140,9 @@
     eventsBetween, person, summary, residentsOf, cohort, search, stats, panelAt, panelsBetween, residentOfTheDay,
     /** A resident's identity and character only: name, colour, birth, home, traits. Cheap, for sites that need many. */
     character: (id) => { const c = character(id); return c ? named(c) : null; },
-    homes: () => (ready() ? homes() : []), householdAt: (homeIndex, t) => residentsOfHome(homeIndex, t), movesBetween, ageAt,
+    homes: () => (ready() ? homes() : []), householdAt: (homeIndex, t) => residentsOfHome(homeIndex, t), movesBetween, ageAt, pixelBirthday,
+    /** The life clock: toLife/fromLife from the Weather Bureau, and `later(t, span)`. Ages are measured on it. */
+    lifeClock: { toLife: toL, fromLife: fromL, later, YEAR },
     lifeStart: LIFE_START, darkAt, litBetween: (from, to) => lifeEvents(from, to),
     /** Pixels lit and gone dark in the days before t: { lit: [ids], dark: [ids] }, newest first. */
     recentLife(t, days) {
