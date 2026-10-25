@@ -548,6 +548,36 @@
     for (let i = 0; i < w.length; i++) { u -= w[i]; if (u < 0) return FACULTIES[i]; }
     return FACULTIES[0];
   }
+  // ---------------------------------------------------------------- wellbeing and choices (from 1 September 2027)
+  // A pixel's needs are their district's (Pixel City Society: housing, charge, health, security, leisure), adjusted for
+  // their own life: pay against their trade, being out of work, studying, a student loan to repay, age. Each month a
+  // working pixel weighs up their job (pay, their dream, their wellbeing); an unhappy one may quit. A pixel who quits
+  // may retrain at Pixel University, usually towards their dream, on a loan from the Bank at its rate on the day.
+  const WELL_START = Date.UTC(2027, 8, 1);
+  function wellbeingOf(id, birth, district, t, sp, c) {
+    const S = U().society, base = S && S.needsAt ? S.needsAt(district, t) : null;
+    if (!base) return null;
+    const n = { housing: base.housing, charge: base.charge, health: base.health, security: base.security, leisure: base.leisure };
+    if (sp && sp.status === 'employed') { const e = employers().byId[sp.employer]; n.housing += ((sp.wage || 0) / (e ? SECTOR[e.sector].wage : 500) - 1) * 0.8; }
+    else if (sp && sp.status === 'looking') n.housing -= 0.25;
+    else if (sp && sp.status === 'studying') n.housing -= 0.1;
+    if (c && c.loan && t >= c.loan.from && t < c.loan.until) n.housing -= 0.08;
+    if (ageAt(birth, t) >= 65) n.health -= 0.1 * (1 - n.health);
+    for (const k in n) n[k] = n[k] < 0 ? 0 : n[k] > 1 ? 1 : n[k];
+    n.wellbeing = 0.25 * n.housing + 0.2 * n.charge + 0.2 * n.health + 0.15 * n.security + 0.2 * n.leisure;
+    return n;
+  }
+  function quitAt(id, birth, district, sp, c, from, to) { // the first month an unhappy pixel walks out, if any
+    const e = employers().byId[sp.employer]; if (!e) return null;
+    for (let m = sp.from + 30 * DAY; m <= to; m += 30 * DAY) {
+      if (m <= from || m < WELL_START) continue;
+      const wb = wellbeingOf(id, birth, district, m, sp, c); if (!wb) continue;
+      const sat = 0.5 + ((sp.wage || 0) / SECTOR[e.sector].wage - 1) * 1.5 + (sp.dream ? 0.15 : 0) + (wb.wellbeing - 0.75);
+      const p = sat < 0.5 ? Math.min(0.1, (0.5 - sat) * 0.4) : 0;
+      if (p > 0 && seeded('quit:' + id + ':' + Math.floor(m / DAY))() < p) return m;
+    }
+    return null;
+  }
   function careerUntil(id, birth, district, t) {
     let c = careerCache.get(id);
     if (!c) {
@@ -570,6 +600,10 @@
           for (; x + 7 * DAY <= upTo; x += 7 * DAY) if (!operating(e, x + 7 * DAY)) break;
           if (x + 7 * DAY <= upTo) { let y = x; while (y < x + 7 * DAY && operating(e, y + DAY)) y += DAY; closedAt = y + DAY; } // closed this week: find the day
         }
+        if (e.kind === 'business') { // an unhappy pixel may walk out before anything else happens
+          const q = quitAt(id, birth, district, last, c, last.checked, closedAt !== null ? closedAt : upTo);
+          if (q !== null) { last.to = q; last.reason = 'Left: unhappy with the job'; delete last.pending; c.unhappy = q; c.next = q; continue; }
+        }
         if (closedAt !== null) {
           last.to = closedAt; last.reason = e.kind === 'business' ? 'Laid off when ' + last.name + ' closed' : e.kind === 'site' ? 'Laid off when ' + e.name + ' closed' : 'The building was finished';
           delete last.pending;
@@ -588,14 +622,23 @@
       if (age < 18) { c.spells.push({ from: S, to: birth + 18 * YEAR, status: 'young' }); c.next = birth + 18 * YEAR; continue; }
       if (S >= UNI_APPLY && !c.degree && age < 60) { // applications open with the Renewal, for the first year in March 2027 // Pixel University: its own seed, so nothing else in a life is drawn differently
         const ru = seeded('uni:' + id + ':' + k), prev = c.spells[c.spells.length - 1];
-        const chance = age < 25 ? 0.3 : prev && prev.status === 'looking' ? 0.14 : 0.025;
+        const unhappy = c.unhappy && S - c.unhappy < 60 * DAY && age < 50; // walked out recently: time to retrain?
+        const chance = unhappy ? 0.5 : age < 25 ? 0.3 : prev && prev.status === 'looking' ? 0.14 : 0.025;
         if (ru() < chance) {
           // everyone starts together on 1 March, and finishes on 1 December, graduation day
           const fac = chooseFaculty(id, ru), years = age < 25 ? 3 : 1, y0 = new Date(S).getUTCFullYear(), start = S <= Date.UTC(y0, 2, 1) ? Date.UTC(y0, 2, 1) : Date.UTC(y0 + 1, 2, 1);
           const y1 = new Date(start).getUTCFullYear() + years - 1, end = Date.UTC(y1, 11, 1);
           if (end < retireAt) {
             if (start > S) c.spells.push({ from: S, to: start, status: 'away', reason: 'Waiting to start at Pixel University' });
-            c.spells.push({ from: start, to: end, status: 'studying', faculty: fac.id, course: fac.course, award: years === 3 ? 'degree' : 'diploma', reason: 'Studying ' + fac.course + ' at Pixel University' });
+            const studying = { from: start, to: end, status: 'studying', faculty: fac.id, course: fac.course, award: years === 3 ? 'degree' : 'diploma', reason: 'Studying ' + fac.course + ' at Pixel University' };
+            if (S >= WELL_START) { // fees on a loan from the Bank, at its rate on the day, repaid over five years from graduation
+              let rate = 4; try { const h = U().bank && U().bank.historyBetween(S - 2 * DAY, S); if (h && h.length) rate = h[h.length - 1].rate; } catch (e2) { /* the Bank's books aren't here */ }
+              c.loan = { amount: years * 4000, rate: Math.round((rate + 1.5) * 100) / 100, from: end, until: end + 5 * YEAR };
+              studying.reason += ', on a loan of ' + (years * 4000).toLocaleString('en') + ' W at ' + c.loan.rate + '%';
+              if (unhappy) studying.reason += ', after leaving a job they didn\u2019t like';
+            }
+            c.spells.push(studying);
+            c.unhappy = 0;
             c.degree = { faculty: fac.id, course: fac.course, award: years === 3 ? 'degree' : 'diploma', started: start, graduated: end };
             c.next = end;
             continue;
@@ -609,6 +652,13 @@
         const end = Math.min(S + Math.floor(len * 0.6), retireAt);
         if (why === 'Retired early') { c.spells.push({ from: S, to: Infinity, status: 'retired', reason: why }); c.next = Infinity; break; }
         c.spells.push({ from: S, to: end, status: 'away', reason: why });
+        c.next = end;
+        continue;
+      }
+      if (c.unhappy && S - c.unhappy < 60 * DAY) { // walked out, didn't retrain: a spell looking for something better
+        c.unhappy = 0;
+        const end = S + Math.floor((1 + r() * 2) * MONTH);
+        c.spells.push({ from: S, to: end, status: 'looking', reason: 'Looking for something better' });
         c.next = end;
         continue;
       }
@@ -1018,6 +1068,8 @@
   root.PixelUniverse = root.PixelUniverse || {};
   root.PixelUniverse.labour = {
     version: VERSION, source: 'jobs', startDate: ymd(LIFE_START + 12 * H), start: LIFE_START, opens: JOB_CENTRE_OPENS, ready: fullReady, registryReady: ready, SECTOR,
+    wellbeingOf: (id, t) => { if (!fullReady()) return null; const c = character(id); if (!c) return null; const sp = careerUntil(id, c.birth, c.district, t).find((x) => x.from <= t && t < x.to); return wellbeingOf(id, c.birth, c.district, t, sp, careerCache.get(id)); },
+    loanOf: (id, t) => { const c = careerCache.get(id); return c && c.loan && c.loan.from - 3 * YEAR <= t ? Object.assign({}, c.loan) : null; },
     universityAt: (t) => (fullReady() ? universityAt(t) : null), universityEventsBetween: (from, to) => (fullReady() ? universityEvents(from, to) : []), universityOpens: UNI_OPENS, FACULTIES,
     employers: () => (ready() ? employers() : []), operating,
     /** What a resident does for a living at t: { status: 'employed' | 'looking' | 'away' | 'retired' | 'young', employer, employerName, title, wage, from, to, dream, reason } */

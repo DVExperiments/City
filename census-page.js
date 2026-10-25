@@ -147,6 +147,16 @@
       const now = w.status === 'employed' ? 'Works as a ' + esc(w.title) + ' at ' + esc(w.employerName) + (w.dream ? ', their dream job' : '') : w.status === 'looking' ? 'Looking for work since ' + fYear.format(w.from) : w.status === 'retired' ? 'Retired' : esc(w.reason || 'Not working');
       h += '<h2>Work</h2><p>' + now + '.' + (w.status === 'employed' ? ' ' + w.wage.toLocaleString('en') + ' W a week.' : '') + ' <a href="' + JC + '">Their Job Centre record</a></p>';
     }
+    // basic needs, and any student loan (from 1 September 2027)
+    { const LB = window.PixelUniverse && window.PixelUniverse.labour;
+      const wb = LB && LB.wellbeingOf && p.present ? LB.wellbeingOf(p.id, t) : null, loan = LB && LB.loanOf ? LB.loanOf(p.id, t) : null;
+      if (wb) {
+        const bar = (k, label) => '<div><dt>' + label + '</dt><dd>' + Math.round(wb[k] * 100) + '<small> of 100</small></dd></div>';
+        h += '<h2>How life is going</h2><dl class="facts">' + bar('wellbeing', 'Wellbeing') + bar('housing', 'Housing') + bar('charge', 'Charge') + bar('health', 'Health') + bar('security', 'Security') + bar('leisure', 'Leisure') + '</dl>' +
+          '<p class="hint">Their district\u2019s needs (Pixel City Society), adjusted for their own pay, work, age and debts. A pixel who is unhappy at work may leave, and may retrain.</p>';
+      }
+      if (loan) h += '<p>Student loan: ' + loan.amount.toLocaleString('en') + ' W at ' + loan.rate + '%, repaid from ' + fYear.format(loan.from) + ' to ' + fYear.format(loan.until) + '. <a href="https://dvexperiments.github.io/Bank/' + AT + '">The Bank</a></p>';
+    }
     h += '<h2>Household</h2><ul class="list-plain">' + p.householdMembers.filter((m) => m.born).map((m) => '<li><span class="chip" style="--c:' + m.color + '"></span>' + (m.id === p.id ? '<b>' + esc(m.name) + '</b>' : link('resident/' + m.id, esc(m.name))) + '<small class="muted">' + ROLE[m.role] + ', ' + m.age + (m.goneDark ? ', gone dark' : m.lit ? ', lit in the new era' : '') + '</small></li>').join('') + '</ul>';
     h += '<p class="hint" style="margin-top:16px">' + link('district/' + p.district, 'More residents of ' + esc(p.districtName)) + '</p></div></div>';
     return h;

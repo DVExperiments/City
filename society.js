@@ -27,12 +27,13 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '1.1.0';
+  const VERSION = '1.2.0';
   const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const START = Date.UTC(2026, 11, 1); // the December Grand Prix: Society begins with freight
   const VOTES_FROM = Date.UTC(2027, 4, 1); // elections read Society from the May 2027 general election
   const POLL_LAG = 14 * DAY;
-  const MIG_START = Date.UTC(2027, 2, 1); // from 1 March 2027 pixels move in and out of the city // the Senate's elections read the mood a fortnight before polling day
+  const MIG_START = Date.UTC(2027, 2, 1);
+  const WELL_START = Date.UTC(2027, 8, 1); // from 1 September 2027, basic needs move moods, migration and working lives // from 1 March 2027 pixels move in and out of the city // the Senate's elections read the mood a fortnight before polling day
 
   function rng(a) {
     return function () {
@@ -245,7 +246,7 @@
       for (let j = 0; j < 4; j++) lean[c.i * 4 + j] = w[j] / tot;
       mood[c.i] = 0.6 + (r() - 0.5) * 0.1;
     }
-    OP = { k: 0, lean, mood, base: lean.slice(), days: [], events: [], rival: {}, top: {}, turned: {}, pop: new Float64Array(C.D).fill(1), staff0: null, exodus: {}, full: {}, month: { left: new Float64Array(C.D), came: new Float64Array(C.D) } };
+    OP = { k: 0, lean, mood, base: lean.slice(), days: [], events: [], rival: {}, top: {}, turned: {}, pop: new Float64Array(C.D).fill(1), needs: new Float64Array(C.D * 5).fill(0.7), staff0: null, exodus: {}, full: {}, month: { left: new Float64Array(C.D), came: new Float64Array(C.D) } };
   }
   const cityChunk = new Map(), exChunk = new Map();
   function worldYesterday(k) { // what happened on trading day k-1, as each district felt it
@@ -267,6 +268,8 @@
     const emit = (type, importance, idPart, data, headline, sec) => OP.events.push({ id: 'society:' + idPart, time: iso(at + sec * 1000), ms: at + sec * 1000, source: 'society', type, importance, data, headline });
     const w = k > 0 ? worldYesterday(k) : { aqi: 40, dark: {}, cpi: 100, conf: 100, shelves: null, jobsLost: new Float64Array(C.D), staffD: null, glitch: new Float64Array(C.D) };
     const tr = tasteRecord(k);
+    const wellbeing = (d) => { const n = OP.needs; return 0.25 * n[d * 5] + 0.2 * n[d * 5 + 1] + 0.2 * n[d * 5 + 2] + 0.15 * n[d * 5 + 3] + 0.2 * n[d * 5 + 4]; };
+    const wellOn = dayStart(k) >= WELL_START;
     // what each district has been through yesterday, as pressure towards each party
     const push = [], hardship = new Float64Array(C.D);
     for (let d = 0; d < C.D; d++) {
@@ -294,7 +297,7 @@
         lean2[base + j] = x > 0.005 ? x : 0.005; tot += lean2[base + j];
       }
       for (let j = 0; j < 4; j++) lean2[base + j] /= tot;
-      mood2[c.i] = clamp(OP.mood[c.i] + (0.68 - 0.45 * hardship[c.d] + 0.25 * clamp(joy[c.i], 0, 0.6) - OP.mood[c.i]) * 0.08, 0, 1);
+      mood2[c.i] = clamp(OP.mood[c.i] + (0.68 - 0.45 * hardship[c.d] + 0.25 * clamp(joy[c.i], 0, 0.6) + (wellOn ? 0.3 * (wellbeing(c.d) - 0.6) : 0) - OP.mood[c.i]) * 0.08, 0, 1);
     }
     OP.lean = lean2; OP.mood = mood2;
     // allegiances: when a community turns to another party, it falls out with the biggest community in its district that
@@ -316,6 +319,22 @@
       const [a1, b1] = key.split(':').map(Number);
       if (OP.top[a1] === OP.top[b1] && k - OP.rival[key] > 14) { delete OP.rival[key]; emit('society.reconciled', 1, 'mend:' + key + ':' + ymd(dayStart(k)), { a: C.list[a1].name, b: C.list[b1].name }, 'The ' + C.list[a1].name + ' and the ' + C.list[b1].name + ' are on speaking terms again', 4); }
     }
+    // basic needs, district by district: housing (rent against jobs), charge (the shelves), health (smog), security
+    // (blackouts and glitches, remembered for a week or so), leisure (parks, crazes, Grand Prix days). Smoothed over a week.
+    if (k > 0) {
+      const parks = new Float64Array(C.D);
+      try { const t0 = dayStart(k - 1) + 12 * H, cs = City().stateAt(t0), fd = {}; for (const f of City().map(t0).features) if (f.kind === 'site') fd[f.id] = f.district; for (const site of cs.sites || []) if (site.type === 'park' && site.state === 'operating' && fd[site.id] !== undefined) parks[fd[site.id]]++; } catch (e) { /* no parks today */ }
+      const n2 = OP.needs.slice();
+      for (let d = 0; d < C.D; d++) {
+        let joy = 0, wsum = 0; if (tr) for (const c of C.byDistrict[d]) { let a = 0; for (const f of tr.fads) a += f.a[c.i]; joy += a * c.size; wsum += c.size; }
+        joy = wsum ? joy / wsum : 0;
+        const jobR = w.staffD && OP.staff0 && OP.staff0[d] > 0 ? w.staffD[d] / OP.staff0[d] : 1, rent = w.rentD ? w.rentD[d] : 1;
+        const now = [clamp(0.75 - 0.5 * (rent - 1) + 0.6 * (jobR - 1), 0, 1), w.shelves ? clamp(w.shelves[d] / 1.5, 0, 1) : 1, 1 - clamp((w.aqi - 50) / 150, 0, 1),
+          1 - clamp((w.dark[d] || 0) / 6 + w.glitch[d], 0, 1), clamp(0.45 + 0.08 * parks[d] + 0.8 * joy, 0, 1)];
+        for (let j = 0; j < 5; j++) n2[d * 5 + j] += (now[j] - n2[d * 5 + j]) / (j === 3 ? 10 : 7);
+      }
+      OP.needs = n2;
+    }
     // migration: arrivals fill empty homes, pulled by jobs and good times; departures are pushed by smog, blackouts,
     // lost jobs, a sour mood and glitches. The city can't hold more pixels than it has homes.
     if (dayStart(k) >= MIG_START && w.staffD) {
@@ -324,7 +343,7 @@
       for (let d = 0; d < C.D; d++) {
         let m = 0, wsum = 0; for (const c of C.byDistrict[d]) { m += OP.mood[c.i] * c.size; wsum += c.size; } m = wsum ? m / wsum : 0.65;
         const jobR = OP.staff0[d] > 0 ? w.staffD[d] / OP.staff0[d] : 1, smog = clamp((w.aqi - 80) / 120, 0, 1), dark = clamp((w.dark[d] || 0) / 6, 0, 1);
-        const leave = 0.00012 + 0.0006 * smog + 0.0005 * dark + 0.0008 * clamp(1 - jobR, 0, 1) + 0.0006 * clamp(0.6 - m, 0, 1) + 0.0004 * w.glitch[d];
+        const leave = 0.00012 + 0.0006 * smog + 0.0005 * dark + 0.0008 * clamp(1 - jobR, 0, 1) + 0.0006 * clamp(0.6 - m, 0, 1) + 0.0004 * w.glitch[d] + (wellOn ? 0.0008 * clamp(0.55 - wellbeing(d), 0, 1) : 0); // a hard life is a reason to go
         const cheap = w.rentD ? clamp(1 - w.rentD[d], 0, 0.5) : 0; // cheap rents draw new residents to a district others left
         const pull = clamp(jobR, 0, 1.3), come = (1 - p2[d]) * 0.004 * (pull * pull + 1.5 * cheap) * (w.conf / 100) + 0.00012;
         const was = p2[d];
@@ -349,7 +368,7 @@
     const poll = new Float32Array(C.D * 4), dmood = new Float32Array(C.D), wsum = new Float64Array(C.D);
     for (const c of C.list) { for (let j = 0; j < 4; j++) poll[c.d * 4 + j] += OP.lean[c.i * 4 + j] * c.size; dmood[c.d] += OP.mood[c.i] * c.size; wsum[c.d] += c.size; }
     for (let d = 0; d < C.D; d++) { for (let j = 0; j < 4; j++) poll[d * 4 + j] /= wsum[d]; dmood[d] /= wsum[d]; }
-    OP.days.push({ k, pop: Float32Array.from(OP.pop), poll, mood: dmood, lean: Float32Array.from(OP.lean), cmood: Float32Array.from(OP.mood), hardship: Float32Array.from(hardship) });
+    OP.days.push({ k, needs: Float32Array.from(OP.needs), pop: Float32Array.from(OP.pop), poll, mood: dmood, lean: Float32Array.from(OP.lean), cmood: Float32Array.from(OP.mood), hardship: Float32Array.from(hardship) });
     if (OP.days.length === 1) OP.basePoll = poll;
     OP.k = k + 1;
   }
@@ -370,6 +389,15 @@
     return clamp(1 + 1.6 * (ratio - 1), 0.45, 2);
   }
 
+  const NEEDS = ['housing', 'charge', 'health', 'security', 'leisure'];
+  /** A district's basic needs, as of the close before t: each 0 (unmet) to 1 (well met), and overall wellbeing. */
+  function needsAt(d, t) {
+    if (!opinionsReady() || t < START + 2 * DAY) return null;
+    const rec = opinionRecord(daysTo(t) - 1); if (!rec || !rec.needs) return null;
+    const o = {}; NEEDS.forEach((n, j) => (o[n] = rec.needs[d * 5 + j]));
+    o.wellbeing = 0.25 * o.housing + 0.2 * o.charge + 0.2 * o.health + 0.15 * o.security + 0.2 * o.leisure;
+    return o;
+  }
   /** The share of a district's homes that are lived in, as of the close before t: 1 is a full district. */
   function populationAt(d, t) {
     if (!opinionsReady() || t < MIG_START + DAY) return 1;
@@ -400,7 +428,7 @@
     if (opinionsReady()) {
       const op = opinionRecord(k);
       const poll = (d) => { const o = {}; PIDS.forEach((p, j) => (o[p] = rd(op.poll[d * 4 + j] * 100, 10))); return o; };
-      out.districts = C.districts.map((D, d) => ({ id: d, name: D.name, population: Math.round((op.pop ? op.pop[d] : 1) * D.residents), homesLivedIn: rd((op.pop ? op.pop[d] : 1) * 100, 10), mood: rd(op.mood[d] * 100, 1), hardship: rd(op.hardship[d] * 100, 1), poll: poll(d), base: (() => { const o = {}; PIDS.forEach((p, j) => (o[p] = rd(OP.basePoll[d * 4 + j] * 100, 10))); return o; })() }));
+      out.districts = C.districts.map((D, d) => ({ id: d, name: D.name, needs: (() => { const n = needsAt(d, t); if (!n) return null; const o = {}; for (const key in n) o[key] = rd(n[key] * 100, 1); return o; })(), population: Math.round((op.pop ? op.pop[d] : 1) * D.residents), homesLivedIn: rd((op.pop ? op.pop[d] : 1) * 100, 10), mood: rd(op.mood[d] * 100, 1), hardship: rd(op.hardship[d] * 100, 1), poll: poll(d), base: (() => { const o = {}; PIDS.forEach((p, j) => (o[p] = rd(OP.basePoll[d * 4 + j] * 100, 10))); return o; })() }));
       let tot = 0; const city = { B: 0, V: 0, L: 0, I: 0 }; let m = 0;
       for (let d = 0; d < C.D; d++) { const w = C.districts[d].residents; tot += w; m += op.mood[d] * w; PIDS.forEach((p, j) => (city[p] += op.poll[d * 4 + j] * w)); }
       PIDS.forEach((p) => (city[p] = rd(city[p] / tot * 100, 10)));
@@ -497,6 +525,6 @@
   root.PixelUniverse.society = {
     version: VERSION, source: 'society', startDate: ymd(START), start: START, votesFrom: ymd(VOTES_FROM), ready, opinionsReady,
     stateAt, community, communitiesAt, pixelAt, eventsBetween, historyBetween,
-    productBoost, songFad, colourFad, voteSwing, populationAt, incumbentFactor, migrationStart: ymd(MIG_START), INTERESTS: INTERESTS.map((x) => x.name), COLOURS: COLOURS.map((c) => ({ name: c[0], hex: c[1] }))
+    productBoost, songFad, colourFad, voteSwing, populationAt, needsAt, NEEDS, wellbeingStart: ymd(WELL_START), incumbentFactor, migrationStart: ymd(MIG_START), INTERESTS: INTERESTS.map((x) => x.name), COLOURS: COLOURS.map((c) => ({ name: c[0], hex: c[1] }))
   };
 })(typeof window !== 'undefined' ? window : globalThis);
