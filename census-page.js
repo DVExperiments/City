@@ -155,6 +155,8 @@
         h += '<h2>How life is going</h2><dl class="facts">' + bar('wellbeing', 'Wellbeing') + bar('housing', 'Housing') + bar('charge', 'Charge') + bar('health', 'Health') + bar('security', 'Security') + bar('leisure', 'Leisure') + '</dl>' +
           '<p class="hint">Their district\u2019s needs (Pixel City Society), adjusted for their own pay, work, age and debts. A pixel who is unhappy at work may leave, and may retrain.</p>';
       }
+      const mort = LB && LB.mortgageOf ? LB.mortgageOf(p.id) : null;
+      if (mort && t >= mort.from) h += '<p>Mortgage on their home: ' + mort.amount.toLocaleString('en') + ' W at ' + mort.rate + '% from the Bank of Pixel City, until ' + fYear.format(mort.until) + '.</p>';
       if (loan) h += '<p>Student loan: ' + loan.amount.toLocaleString('en') + ' W at ' + loan.rate + '%, repaid from ' + fYear.format(loan.from) + ' to ' + fYear.format(loan.until) + '. <a href="https://dvexperiments.github.io/Bank/' + AT + '">The Bank</a></p>';
     }
     h += '<h2>Household</h2><ul class="list-plain">' + p.householdMembers.filter((m) => m.born).map((m) => '<li><span class="chip" style="--c:' + m.color + '"></span>' + (m.id === p.id ? '<b>' + esc(m.name) + '</b>' : link('resident/' + m.id, esc(m.name))) + '<small class="muted">' + ROLE[m.role] + ', ' + m.age + (m.goneDark ? ', gone dark' : m.lit ? ', lit in the new era' : '') + '</small></li>').join('') + '</ul>';

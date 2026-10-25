@@ -562,10 +562,20 @@
     else if (sp && sp.status === 'looking') n.housing -= 0.25;
     else if (sp && sp.status === 'studying') n.housing -= 0.1;
     if (c && c.loan && t >= c.loan.from && t < c.loan.until) n.housing -= 0.08;
+    if (c && c.mortgage && t >= c.mortgage.from && t < c.mortgage.until) n.housing -= 0.05; // repayments, instead of rent
     if (ageAt(birth, t) >= 65) n.health -= 0.1 * (1 - n.health);
     for (const k in n) n[k] = n[k] < 0 ? 0 : n[k] > 1 ? 1 : n[k];
     n.wellbeing = 0.25 * n.housing + 0.2 * n.charge + 0.2 * n.health + 0.15 * n.security + 0.2 * n.leisure;
     return n;
+  }
+  // A household that moves into a house from 1 September 2027 often buys it with a mortgage from the Bank, at the Bank's
+  // rate on the day plus 1.8%, over 25 years. The Bank's book is kept district by district; these are its borrowers.
+  function mortgageOf(ch) {
+    if (!ch || ch.homeKind !== 'house' || !(ch.movedIn >= WELL_START)) return null;
+    const key = 'mortgage:' + ch.home + ':' + ch.movedIn;
+    if (hash(key) / 4294967296 >= 0.6) return null;
+    let rate = 4; try { const h = U().bank && U().bank.historyBetween(ch.movedIn - 2 * DAY, ch.movedIn); if (h && h.length) rate = h[h.length - 1].rate; } catch (e) { /* the Bank's books aren't here */ }
+    return { amount: Math.round((30000 + (hash(key + ':a') % 40000)) / 100) * 100, rate: Math.round((rate + 1.8) * 100) / 100, from: ch.movedIn, until: ch.movedIn + 25 * YEAR };
   }
   function quitAt(id, birth, district, sp, c, from, to) { // the first month an unhappy pixel walks out, if any
     const e = employers().byId[sp.employer]; if (!e) return null;
@@ -573,7 +583,7 @@
       if (m <= from || m < WELL_START) continue;
       const wb = wellbeingOf(id, birth, district, m, sp, c); if (!wb) continue;
       const sat = 0.5 + ((sp.wage || 0) / SECTOR[e.sector].wage - 1) * 1.5 + (sp.dream ? 0.15 : 0) + (wb.wellbeing - 0.75);
-      const p = sat < 0.5 ? Math.min(0.1, (0.5 - sat) * 0.4) : 0;
+      const p = sat < 0.55 ? Math.min(0.1, (0.55 - sat) * 0.4) : 0;
       if (p > 0 && seeded('quit:' + id + ':' + Math.floor(m / DAY))() < p) return m;
     }
     return null;
@@ -719,12 +729,13 @@
     if (uniCache.has(d)) return uniCache.get(d);
     const map = renewedMap();
     const fac = {}; for (const f of FACULTIES) fac[f.id] = { id: f.id, name: f.name, course: f.course, roles: f.roles, students: 0, degree: 0, diploma: 0, graduates: 0, newThisYear: 0 };
-    const out = { open: true, students: 0, graduates: 0, graduatesWorking: 0, graduatesThisYear: 0, startedThisYear: 0, byDistrict: map.districts.map((x) => ({ id: x.id, name: x.name, students: 0, graduates: 0 })), sampleStudents: [], sampleGraduates: [] };
+    const out = { open: true, loans: 0, loanBook: 0, students: 0, graduates: 0, graduatesWorking: 0, graduatesThisYear: 0, startedThisYear: 0, byDistrict: map.districts.map((x) => ({ id: x.id, name: x.name, students: 0, graduates: 0 })), sampleStudents: [], sampleGraduates: [] };
     const yr = new Date(t).getUTCFullYear(), yearStart = t >= Date.UTC(yr, 2, 1) ? Date.UTC(yr, 2, 1) : Date.UTC(yr - 1, 2, 1), lastGrad = t >= Date.UTC(yr, 11, 1) ? Date.UTC(yr, 11, 1) : Date.UTC(yr - 1, 11, 1);
     for (const h of homes()) for (const m of residentsOfHome(h.i, t).members) {
       if (ageAt(m.birth, t) < 18) continue;
       const spells = careerUntil(m.id, m.birth, h.district, t), c = careerCache.get(m.id);
       if (!c || !c.degree) continue;
+      if (c.loan && t < c.loan.until) { out.loans++; out.loanBook += t < c.loan.from ? c.loan.amount : c.loan.amount * (c.loan.until - t) / (c.loan.until - c.loan.from); }
       const now = spells.find((sp) => sp.from <= t && t < sp.to), g = c.degree, F = fac[g.faculty];
       const started = g.started;
       if (started > t) continue;
@@ -1068,7 +1079,8 @@
   root.PixelUniverse = root.PixelUniverse || {};
   root.PixelUniverse.labour = {
     version: VERSION, source: 'jobs', startDate: ymd(LIFE_START + 12 * H), start: LIFE_START, opens: JOB_CENTRE_OPENS, ready: fullReady, registryReady: ready, SECTOR,
-    wellbeingOf: (id, t) => { if (!fullReady()) return null; const c = character(id); if (!c) return null; const sp = careerUntil(id, c.birth, c.district, t).find((x) => x.from <= t && t < x.to); return wellbeingOf(id, c.birth, c.district, t, sp, careerCache.get(id)); },
+    wellbeingOf: (id, t) => { if (!fullReady()) return null; const c = character(id); if (!c) return null; const sp = careerUntil(id, c.birth, c.district, t).find((x) => x.from <= t && t < x.to); const cc = Object.assign({}, careerCache.get(id) || {}, { mortgage: mortgageOf(c) }); return wellbeingOf(id, c.birth, c.district, t, sp, cc); },
+    mortgageOf: (id) => { const c = character(id); return c ? mortgageOf(c) : null; },
     loanOf: (id, t) => { const c = careerCache.get(id); return c && c.loan && c.loan.from - 3 * YEAR <= t ? Object.assign({}, c.loan) : null; },
     universityAt: (t) => (fullReady() ? universityAt(t) : null), universityEventsBetween: (from, to) => (fullReady() ? universityEvents(from, to) : []), universityOpens: UNI_OPENS, FACULTIES,
     employers: () => (ready() ? employers() : []), operating,
