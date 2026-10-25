@@ -139,7 +139,7 @@
   function initTastes() { TR = { k: 0, fads: [], ended: [], days: [], events: [], n: 0 }; }
   function fmRecent(day) { // songs released in the three weeks before day
     const w = Math.floor((day - FM_OPENS) / WEEK), out = [];
-    for (let x = w - 2 < 0 ? 0 : w - 2; x <= w; x++) for (let k = 0; k < (x === 0 ? FM_LAUNCH : FM_PER_WEEK); k++) out.push('w' + x + '-' + k);
+    for (let x = w - 2 < 0 ? 0 : w - 2; x <= w; x++) for (let k = 0; k < (x === 0 ? FM_LAUNCH : x >= 7 ? 16 : FM_PER_WEEK); k++) out.push('w' + x + '-' + k); // sixteen a week from 7 December 2026
     return out;
   }
   const strengthOf = (f) => { const C = communities(); let s = 0; for (const c of C.list) s += f.a[c.i] * c.size; return s / C.pop; };
