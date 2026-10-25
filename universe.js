@@ -632,7 +632,7 @@
       x.aqi = rnd(h.smog);
       x.air = aqiBand(x.aqi);
       if (x.aqi > 150 && !h.smogAlert) { h.smogAlert = true; emit(out, te, 'city.smog', 3, 'smog:' + ymd(d), { aqi: x.aqi }, 'Smog alert: air quality is ' + x.air.toLowerCase() + ' (' + x.aqi + ')'); }
-      else if (x.aqi <= 100 && h.smogAlert) { h.smogAlert = false; emit(out, te, 'city.smog.clears', 2, 'smog-clears:' + ymd(d), { aqi: x.aqi }, 'The smog clears'); }
+      else if (x.aqi <= 100 && h.smogAlert) { h.smogAlert = false; emit(out, te, 'city.smog-clears', 2, 'smog-clears:' + ymd(d), { aqi: x.aqi }, 'The smog clears'); }
       // the port
       for (const c of schedule(d)) {
         if (c.held >= 6 * H && c.type !== 'ferry') emit(out, c.due, 'port.held', 2, c.id + ':held', { ship: c.name, type: c.type, hours: Math.floor(c.held / H) },
