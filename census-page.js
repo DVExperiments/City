@@ -98,7 +98,7 @@
     }
     // ages
     const max = Math.max.apply(null, st.ageBands);
-    h += '<div class="two-col"><div><h2>Ages</h2><p class="hint">Median age ' + st.medianAge + '. The oldest resident is ' + st.oldest + '.</p><div class="ages" role="img" aria-label="Residents by age, in decades">' +
+    h += '<div class="two-col"><div><h2>Ages</h2><p class="hint">Median age ' + st.medianAge + '. The oldest resident is ' + st.oldest + '.' + (t >= Date.UTC(2026, 11, 1) ? ' Pixels age at a rate of one year per month. <a href="./#/time">About time</a>.' : '') + '</p><div class="ages" role="img" aria-label="Residents by age, in decades">' +
       st.ageBands.map((v) => '<div style="height:' + (v / max) * 100 + '%" title="' + num(v) + '"></div>').join('') + '</div><div class="age-labels">' + ['0s', '10s', '20s', '30s', '40s', '50s', '60s', '70s', '80s', '90+'].map((x) => '<span>' + x + '</span>').join('') + '</div></div>';
     // recent arrivals
     const moves = K.movesBetween(t - 3 * DAY, t).slice(-8).reverse();
@@ -129,7 +129,7 @@
     else if (p.goneDark) h += '<p class="banner">' + esc(p.name) + ' went dark on ' + fYear.format(p.dark) + ', aged ' + K.ageAt(p.birth, p.dark) + '. The Census Office keeps the file.</p>';
     else if (!p.present) h += '<p class="banner">' + esc(p.name) + ' and their household left Pixel City on ' + fYear.format(p.movesOut) + '. The Census Office keeps the file.</p>';
     if (p.expecting && p.present) h += '<p class="banner">The household is expecting a new pixel.</p>';
-    h += '<dl class="facts">' + fact('Age', p.age) + fact('Birthday', esc(p.pixelBirthday && t >= Date.UTC(2026, 11, 1) ? p.pixelBirthday : p.birthday), p.pixelBirthday && t >= Date.UTC(2026, 11, 1) ? 'of every Pixel Year' : '') + fact('Address', esc(p.address)) +
+    h += '<dl class="facts">' + fact('Age', p.age, t >= Date.UTC(2026, 11, 1) ? '<a href="./#/time" title="About time">in Pixel Years</a>' : '') + fact('Birthday', esc(p.pixelBirthday && t >= Date.UTC(2026, 11, 1) ? p.pixelBirthday : p.birthday), p.pixelBirthday && t >= Date.UTC(2026, 11, 1) ? 'of every Pixel Year' : '') + fact('Address', esc(p.address)) +
       fact(p.lit ? 'Lit on' : 'Living here since', p.lit ? fYear.format(p.birth) : p.sinceFounding ? 'The city’s founding' : fYear.format(p.movedIn)) + fact('Household', HOUSEHOLD[p.householdKind]) + fact('Stage of life', esc(p.stage)) + '</dl>';
     h += '<div class="profile-grid"><div><h2>Character</h2><dl>' + K.TRAITS.map(([k, label, lo, hi]) => '<div class="trait"><dt>' + label + '</dt><dd><span class="bar" style="--v:' + p.traits[k] + ';--c:' + p.color + '"></span></dd></div>' +
       '<p class="axis-labels"><span>' + lo + '</span><span>' + hi + '</span></p>').join('') + '</dl>' +

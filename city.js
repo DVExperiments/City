@@ -30,6 +30,10 @@
   const SENATE_URL = 'https://dvexperiments.github.io/Senate/';
   // the city's clock: UTC until the Renewal, City Standard Time (UTC+12) after it. Display times go through cityMs.
   const cityMs = (ms) => ms + (C.offsetAt ? C.offsetAt(ms) : 0);
+  // the Pixel Calendar, from the Weather Bureau: days keep city time, lives keep Pixel Years (one a month)
+  const ADOPTED = W.pixel ? W.pixel.adopted : Date.UTC(2026, 11, 1);
+  const pixelDay = (t) => { if (!W.pixel || t < ADOPTED) return ''; const p = W.pixel.time(t); return 'Year ' + p.year + ', Day ' + (p.dayOfYear + 1); };
+  const clockTip = () => 'About time';
   function light(t) {
     const dl = W.normals(t).dayLength, h = ((cityMs(t) % DAY) + DAY) % DAY / H, rise = 12 - dl / 2, set = 12 + dl / 2;
     if (h < rise - 0.75 || h > set + 0.75) return 0;
@@ -66,7 +70,7 @@
         '<div class="mapctl"><button type="button" id="zin" aria-label="Zoom in">+</button><button type="button" id="zout" aria-label="Zoom out">\u2212</button><button type="button" id="zdir" aria-pressed="false">Buildings</button><button type="button" id="zfit">Whole city</button><button type="button" id="zdist" aria-pressed="true">Districts</button></div>' +
         // what's selected shows on the map itself, so it is never below the fold
         '<div class="selcard" id="selcard" hidden role="region" aria-live="polite" aria-labelledby="selTitle"><button type="button" class="selclose" id="selclose" aria-label="Close">\u00d7</button><h2 id="selTitle"></h2><div id="selection"></div></div>' +
-        '<figcaption class="screen-bar"><span id="barleft"></span><span class="maphint">Hover over a building or a moving packet to see what it is. Select anything else for details.</span><span class="clock" id="clock"></span></figcaption></figure>' +
+        '<figcaption class="screen-bar"><span id="barleft"></span><span class="maphint">Hover over a building or a moving packet to see what it is. Select anything else for details.</span><a class="clock" id="clock" href="#/time"></a></figcaption></figure>' +
         '<div class="live-body"><section><h2>The grid right now</h2><div id="grid"></div></section>' +
         '<aside><h2>Today</h2><dl class="facts" id="gridfacts" style="grid-template-columns:1fr 1fr"></dl></aside></div>' +
         '<div class="two-col"><section><h2>City news</h2><ul class="timeline" id="news"></ul></section><section><h2>Being built</h2><ul class="timeline" id="building"></ul></section></div>';
@@ -176,7 +180,8 @@
         st = C.stateAt(t); wx = W.sample(t);
         n++;
         const g = st.grid;
-        set('clock', 'City time ' + fSec.format(cityMs(t)));
+        set('clock', 'City time ' + fSec.format(cityMs(t)) + (pixelDay(t) ? ' \u00b7 ' + pixelDay(t) : ''));
+        { const ck = document.getElementById('clock'); if (ck) ck.title = clockTip(t); }
         set('barleft', esc(wx.cond) + ', ' + wx.temp.toFixed(1) + '\u00b0C. Air: ' + esc(st.air) + ' (' + st.aqi + ')');
         set('kicker', 'Pixel City, ' + esc(fDate.format(cityMs(t))) + '. ' + st.residents.toLocaleString() + ' residents.');
         const clean = g.demand ? Math.round((g.solar + g.wind) / (g.solar + g.wind + g.coal + g.link + g.gas || 1) * 100) : 0;
@@ -321,13 +326,29 @@
         '<p>The city follows the weather and the laws of the Pixel Senate. When the Senate commissions a wind farm, work begins the next day and the turbines start turning about a fortnight later. Retire coal too quickly, and on a calm winter evening the lights go out.</p>' +
         '<p>Every building, road and district was laid out once and will not move. What changes is what gets built on the reserved sites, the power on the grid, the traffic and the air.</p>' +
         '<p>The city is drawn as what it is: a place on a screen. The main roads are data buses and the streets are signal traces. The river is a data stream, the western forest is a noise field, and the gardens are colour growth. The coast is the frame border, and the sea beyond it is the blank margin, where nothing has been drawn. Each district behaves like the pixel it is named after: Dither is dithered, Moir\u00e9 has interference rings, and parts of Null Pointer refer to textures that do not exist.</p>' +
-        '<p>All times are city time, which is UTC.</p></div>';
+        '<p>Pixels age at a rate of one year per month. <a href="#/time">About time</a>.</p>' +
+        '<p>All times on this site are city time.</p></div>';
+    }
+  };
+
+  V.time = {
+    title: 'About time',
+    render() {
+      const t = now(), on = t >= ADOPTED, p = W.pixel ? W.pixel.time(t) : null;
+      return head('About time', 'Pixels age at a rate of one year per month.', 'Pixel City') +
+        '<dl class="facts" style="grid-template-columns:repeat(4,1fr);margin-bottom:28px">' + fact('A Pixel Year', 'One month', 'from one Grand Prix to the next') + fact('A pixel day', 'About two hours') +
+        fact(on ? 'This year' : 'The first full year', on && p ? 'Year ' + p.year : 'Year 13', on && p ? 'day ' + (p.dayOfYear + 1) + ' of 360' : 'from 1 December 2026') + fact('A long life', 'About seven years') + '</dl>' +
+        '<div class="prose"><p>Pixel City keeps two calendars. The clock keeps the day: the sun rises and sets by it, shifts start and finish by it, Pixel High rings its bell by it and the races start by it. A day in Pixel City is as long as a day anywhere.</p>' +
+        '<p>Lives keep the Pixel Calendar, which the city ' + (on ? 'adopted' : 'adopts') + ' on 1 December 2026. Under it, a year passes every month. The Grand Prix on the 1st is New Year\u2019s Day, and by the next one every resident is a year older. A pixel lit in March is old enough for school by August.</p>' +
+        '<p>Everything else in a life keeps pace. Households come and go, careers rise and turn, and Pixel High and the University fit a full school year into a month. The seasons follow: summer arrives with the Grand Prix, and winter sets in around the middle of the month.</p>' +
+        '<p>Some things keep the clock\u2019s calendar. The Senate sits every weekday and is elected twice a year, and the Exchange and the Bank quote their prices and rates by the year as you know it.</p>' +
+        '<p>Years are counted from the first Daily Crawl, in December 2025, which was Year 1. The clock under the map shows the date on the Pixel Calendar beside the time.</p></div>';
     }
   };
 
   // ---------------------------------------------------------------- routing
-  const ROUTES = { '': 'map', districts: 'districts', district: 'district', power: 'power', port: 'port', about: 'about' };
-  const NAV = { district: 'districts' };
+  const ROUTES = { '': 'map', districts: 'districts', district: 'district', power: 'power', port: 'port', about: 'about', time: 'time' };
+  const NAV = { district: 'districts', time: 'about' };
   let unmount = null;
   function render() {
     if (unmount) { unmount(); unmount = null; }
