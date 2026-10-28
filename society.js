@@ -5,7 +5,12 @@
  * regulars). Communities talk to each other: to the others in their district, to the same kind of community elsewhere,
  * and to the districts next door. Through them, two things spread:
  *
- *   Tastes. Fads in colours, songs and products start in one community and travel, rise and fade. A craze for a colour
+ *   Tastes. Fads in colours, songs and products start in one community and travel, rise and fade. They travel along
+ *   the city's social network: each community knows a handful of others in its district, a kindred community next door,
+ *   and now and then one far across town. Inside every community are trendsetters, who take anything up, conformists,
+ *   who wait until enough of the pixels they talk to have, and holdouts, who almost never do. So a craze can sweep the
+ *   city, stall at a district's edge, leap across town with one well-travelled community, or die where it started.
+ *   A craze for a colour
  *   gets the Senate debating the city's colours; a song that catches on gets played more on Pixel FM; a craze for a
  *   product sends pixels to that kind of shop.
  *
@@ -27,7 +32,7 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '1.2.1';
+  const VERSION = '1.3.0';
   const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const START = Date.UTC(2026, 11, 1); // the December Grand Prix: Society begins with freight
   const VOTES_FROM = Date.UTC(2027, 4, 1); // elections read Society from the May 2027 general election
@@ -126,6 +131,69 @@
     return out;
   }
 
+  // ---------------------------------------------------------------- the social network (tastes)
+  // Who each community talks to, from the map alone. Each knows a few others in its own district (bigger ones are
+  // likelier to be known), one kindred community (the same interest) in a district next door, and, now and then, one
+  // far across town. Ties go both ways. Built once; changing these seeds or counts changes every craze.
+  const NET = { local: 3, kin: 1, far: 0.12, wLocal: 1, wKin: 0.7, wFar: 0.6, self: 0.6 };
+  let TIES = null;
+  function network() {
+    if (TIES) return TIES;
+    const C = communities(), N = C.list.length, adj = [];
+    for (let i = 0; i < N; i++) adj.push(new Map());
+    const tie = (a, b, w, kind) => {
+      if (a === b) return;
+      const old = adj[a].get(b); if (old && old.w >= w) return;
+      adj[a].set(b, { w, kind }); adj[b].set(a, { w, kind });
+    };
+    for (const c of C.list) {
+      const r = seeded('net:' + c.i), own = C.byDistrict[c.d];
+      for (let j = 0; j < NET.local; j++) {
+        let u = r() * (1 - c.share), pick = null; // weighted by size, never itself
+        for (const o of own) { if (o === c) continue; u -= o.share; if (u < 0) { pick = o; break; } }
+        tie(c.i, (pick || own[(c.k + 1) % own.length]).i, NET.wLocal, 'local');
+      }
+      const nb = C.near[c.d], rk = r();
+      if (nb.length) tie(c.i, C.byDistrict[nb[Math.floor(rk * nb.length)]][c.k].i, NET.wKin, 'kin');
+      const rf = r(), rd2 = r(), rc = r();
+      if (rf < NET.far) {
+        const farD = []; for (let d = 0; d < C.D; d++) if (d !== c.d && nb.indexOf(d) < 0) farD.push(d);
+        if (farD.length) { const fd = C.byDistrict[farD[Math.floor(rd2 * farD.length)]]; tie(c.i, fd[Math.floor(rc * fd.length)].i, NET.wFar, 'far'); }
+      }
+    }
+    // flatten for the daily step: for community i, ties[off[i] .. off[i+1]) and their weights
+    const off = new Int32Array(N + 1), to = [], w = [], kind = [];
+    for (let i = 0; i < N; i++) {
+      const keys = Array.from(adj[i].keys()).sort((a, b) => a - b);
+      for (const j of keys) { to.push(j); w.push(adj[i].get(j).w); kind.push(adj[i].get(j).kind); }
+      off[i + 1] = to.length;
+    }
+    const wsum = new Float64Array(N); for (let i = 0; i < N; i++) for (let e = off[i]; e < off[i + 1]; e++) wsum[i] += w[e];
+    // who lives inside each community: trendsetters (take anything up), conformists (each waits until a certain share of
+    // the pixels they talk to have it; spread evenly between lo and hi) and holdouts (spread between 0.55 and 0.95)
+    const thr = C.list.map((c) => {
+      const r = seeded('thr:' + c.i), trend = 0.015 + 0.05 * c.novelty * c.novelty + 0.01 * r();
+      const lo = 0.045 + 0.06 * (1 - c.novelty) + 0.04 * (r() - 0.5);
+      return { trend, conf: 0.66, lo, hi: lo + 0.28 + 0.06 * r(), hold: 1 - 0.66 - trend };
+    });
+    TIES = { off, to: Int32Array.from(to), w: Float64Array.from(w), kind, wsum, thr };
+    return TIES;
+  }
+  // the share of a community that would take a craze up, given how much of what it hears has (Granovetter's thresholds)
+  function willing(th, x) {
+    let s = x >= 0.01 ? th.trend : 0;
+    s += th.conf * clamp((x - th.lo) / (th.hi - th.lo), 0, 1);
+    s += th.hold * clamp((x - 0.55) / 0.4, 0, 1);
+    return s;
+  }
+  // how well a craze suits a community: warm colours for warm-blooded interests, products for their regulars
+  function affinity(f, c) {
+    const I = INTERESTS[c.k];
+    if (f.cat === 'colour') return 1.15 - 0.25 * Math.abs(COLOURS[f.item][2] - I.warmth);
+    if (f.cat === 'product') return I.shop === f.item ? 1.3 : 0.95;
+    return 1;
+  }
+
   // ================================================================ the tastes run
   // Reads the map (communities) and the Weather Bureau (sunshine). Nothing else, so the Exchange, Pixel FM and the
   // Senate can all read it.
@@ -171,18 +239,47 @@
         item = pickI < 0.5 ? I.shop : SHOPS[Math.floor(pickI * 2 * SHOPS.length) % SHOPS.length];
         if (TR.fads.some((f) => f.cat === 'product' && f.item === item)) continue;
       }
-      const f = { id: 'fad' + (TR.n++), cat, item, origin: origin.i, born: k, beta: 0.06 + vir * 0.12, fatigue: 0.0009 + fat * 0.0015, a: new Float64Array(N), peak: 0, peaked: false };
+      const f = { id: 'fad' + (TR.n++), cat, item, origin: origin.i, born: k, appeal: 0.75 + vir * 0.9, fatigue: 0.0008 + fat * 0.0014, a: new Float64Array(N), b: new Float64Array(N), peak: 0, peaked: false,
+        dPeak: new Float64Array(C.D), reached: [origin.d], leapt: false };
       f.a[origin.i] = 0.2;
       TR.fads.push(f);
       const what = cat === 'colour' ? 'a craze for ' + COLOURS[item][0] : cat === 'song' ? 'a song on Pixel FM catching on' : 'a craze for the ' + item.toLowerCase() + 's';
       emit('fad.start', 1, f.id + ':start', { fad: f.id, category: cat, item: cat === 'colour' ? COLOURS[item][0] : item, community: origin.name }, 'The ' + origin.name + ' start ' + what, 1);
     }
     // crazes spread through communities, peak and wear off
+    // Each community hears its own members and its ties, as they were yesterday. The share whose threshold is met
+    // and who haven't yet taken it up (or tired of it) join, a fifth of them a day; those who have it slowly tire of it.
+    const T = network();
     for (const f of TR.fads) {
-      const h = heard(f.a), age = k - f.born, gamma = 0.004 + f.fatigue * age;
+      const age = k - f.born, gamma = 0.006 + f.fatigue * age, a0 = f.a, a1 = new Float64Array(N), b1 = f.b;
       for (const c of C.list) {
-        const a = f.a[c.i];
-        f.a[c.i] = clamp(a + f.beta * (0.6 * h[c.i] + 0.4 * a) * (1 - a) * (0.4 + 0.6 * c.novelty) - gamma * a, 0, 1);
+        const i = c.i; let ties = 0;
+        for (let e = T.off[i]; e < T.off[i + 1]; e++) ties += T.w[e] * a0[T.to[e]];
+        const x = (NET.self * a0[i] + (1 - NET.self) * (T.wsum[i] ? ties / T.wsum[i] : 0)) * f.appeal * affinity(f, c);
+        const want = willing(T.thr[i], x), has = a0[i] + b1[i];
+        const join = want > has ? 0.2 * (want - has) : 0, tire = gamma * a0[i];
+        a1[i] = clamp(a0[i] + join - tire, 0, 1); b1[i] += tire;
+      }
+      f.a = a1;
+      // where it has reached: a district joins when a twentieth of it has the craze, and we note who carried it there
+      for (let d = 0; d < C.D; d++) {
+        let s = 0, wt = 0; for (const c of C.byDistrict[d]) { s += a1[c.i] * c.size; wt += c.size; }
+        const sh = wt ? s / wt : 0; if (sh > f.dPeak[d]) f.dPeak[d] = sh;
+        if (sh < 0.05 || f.reached.indexOf(d) >= 0) continue;
+        // the carrier: the community elsewhere whose tie into this district carried the most of it yesterday
+        let best = null, bestV = 0, into = null;
+        for (const c of C.byDistrict[d]) for (let e = T.off[c.i]; e < T.off[c.i + 1]; e++) {
+          const o = C.list[T.to[e]]; if (o.d === d) continue;
+          const v = T.w[e] * a0[o.i]; if (v > bestV) { bestV = v; best = o; into = c; }
+        }
+        const first = f.reached.length === 1, leap = best && C.near[best.d].indexOf(d) < 0;
+        f.reached.push(d);
+        if (!best || !(first || (leap && !f.leapt))) continue;
+        if (leap) f.leapt = true;
+        const label0 = f.cat === 'colour' ? 'the craze for ' + COLOURS[f.item][0] : f.cat === 'song' ? 'a song from Pixel FM' : 'the craze for ' + f.item.toLowerCase() + 's';
+        emit('fad.spread', leap ? 3 : 2, f.id + ':reach:' + d, { fad: f.id, category: f.cat, item: f.cat === 'colour' ? COLOURS[f.item][0] : f.item, district: C.districts[d].name, from: best.district, carrier: best.name, to: into.name, leap: !!leap,
+          causes: [{ cause: 'carrier', label: 'carried by the ' + best.name + (leap ? ', who know the ' + into.name + ' from across town' : ''), share: 100 }] },
+          'The ' + best.name + ' have taken ' + label0 + ' to ' + C.districts[d].name + (leap ? ', all the way from across town' : ''), 3 + d);
       }
       const s = strengthOf(f);
       if (s > f.peak) f.peak = s;
@@ -195,7 +292,20 @@
       }
     }
     // a craze that has worn off is over
-    TR.fads = TR.fads.filter((f) => { const s = strengthOf(f); if (k - f.born > 12 && s < 0.004) { TR.ended.push({ id: f.id, cat: f.cat, item: f.item, born: f.born, ended: k, peak: rd(f.peak * 100, 10), origin: f.origin }); return false; } return true; });
+    TR.fads = TR.fads.filter((f) => {
+      const s = strengthOf(f); if (!(k - f.born > 12 && s < 0.004)) return true;
+      TR.ended.push({ id: f.id, cat: f.cat, item: f.item, born: f.born, ended: k, peak: rd(f.peak * 100, 10), origin: f.origin, reached: f.reached.length });
+      const o = C.list[f.origin], what = f.cat === 'colour' ? COLOURS[f.item][0] : f.cat === 'song' ? 'its song' : f.item.toLowerCase() + 's';
+      // a craze that was big at home and never left
+      if (f.reached.length === 1 && f.dPeak[o.d] >= 0.08)
+        emit('fad.contained', 1, f.id + ':contained', { fad: f.id, category: f.cat, district: o.district, peak: rd(f.dPeak[o.d] * 100, 1) },
+          f.cat === 'song' ? 'The song ' + o.district + ' couldn\u2019t stop humming never caught on anywhere else' : 'The craze for ' + what + ' is over, having never left ' + o.district, 40);
+      // a city-wide craze that a district held out against
+      if (f.peaked) for (let d = 0; d < C.D; d++) if (f.dPeak[d] < 0.02)
+        emit('fad.holdout', 2, f.id + ':holdout:' + d, { fad: f.id, category: f.cat, district: C.districts[d].name, peak: rd(f.dPeak[d] * 100, 1) },
+          C.districts[d].name + ' never took to ' + (f.cat === 'colour' ? COLOURS[f.item][0] : f.cat === 'song' ? 'the song the rest of the city was humming' : 'the ' + f.item.toLowerCase() + 's') + ', and is quietly proud of it', 41 + d);
+      return false;
+    });
     // the day's record: each craze's strength, by community and city-wide
     TR.days.push({ k, fads: TR.fads.map((f) => ({ id: f.id, cat: f.cat, item: f.item, origin: f.origin, born: f.born, strength: strengthOf(f), a: Float32Array.from(f.a) })) });
     TR.k = k + 1;
@@ -449,7 +559,11 @@
     if (!ready() || t < START + DAY) return null;
     const C = communities(), c = C.list[i]; if (!c) return null;
     const k = daysTo(t) - 1, tr = tasteRecord(k);
-    const out = { id: c.i, name: c.name, district: c.district, districtId: c.d, interest: c.interest, members: c.size, novelty: rd(c.novelty * 100, 1), shop: INTERESTS[c.k].shop,
+    const T = network(), ties = [];
+    for (let e = T.off[c.i]; e < T.off[c.i + 1]; e++) { const o = C.list[T.to[e]]; ties.push({ id: o.i, name: o.name, district: o.district, kind: T.kind[e] }); }
+    const th = T.thr[c.i];
+    const out = { id: c.i, name: c.name, district: c.district, districtId: c.d, interest: c.interest, members: c.size, novelty: rd(c.novelty * 100, 1), shop: INTERESTS[c.k].shop, ties,
+      mix: { trendsetters: rd(th.trend * 100, 1), conformists: rd(th.conf * 100, 1), holdouts: rd(th.hold * 100, 1) },
       fads: tr.fads.map((f) => ({ item: f.cat === 'colour' ? COLOURS[f.item][0] : f.item, category: f.cat, hex: f.cat === 'colour' ? COLOURS[f.item][1] : null, share: rd(f.a[c.i] * 100, 1) })).filter((f) => f.share >= 1) };
     if (opinionsReady()) { const op = opinionRecord(k); out.lean = {}; PIDS.forEach((p, j) => (out.lean[p] = rd(op.lean[c.i * 4 + j] * 100, 1))); out.mood = rd(op.cmood[c.i] * 100, 1); }
     return out;
