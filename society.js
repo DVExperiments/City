@@ -14,8 +14,9 @@
  *   gets the Senate debating the city's colours; a song that catches on gets played more on Pixel FM; a craze for a
  *   product sends pixels to that kind of shop.
  *
- *   Opinions. Each community leans towards Brightness, Verdant, Legacy Mode or an independent, and drifts with its
- *   friends and with what happens to it: smog, blackouts, businesses closing on its streets, empty shelves, prices.
+ *   Opinions. Each community leans towards Brightness, Verdant, Legacy Mode or an independent, and drifts with the
+ *   communities it knows (the same network crazes travel along), listening only to those whose views are close to its
+ *   own and never to those it has fallen out with, and with what happens to it: smog, blackouts, businesses closing on its streets, empty shelves, prices.
  *   The Senate's elections read each district's mood a fortnight before polling day.
  *
  * Two runs, so nothing goes round in a circle within a day:
@@ -32,7 +33,7 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '1.3.0';
+  const VERSION = '1.4.0';
   const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const START = Date.UTC(2026, 11, 1); // the December Grand Prix: Society begins with freight
   const VOTES_FROM = Date.UTC(2027, 4, 1); // elections read Society from the May 2027 general election
@@ -115,20 +116,35 @@
     for (let d = 0; d < D; d++) COMM.byDistrict.push(list.filter((c) => c.d === d));
     return COMM;
   }
-  // what a community hears from its friends: the rest of its district, the same kind of community elsewhere, and the
-  // districts next door. v is a value per community; returns the weighted average each community hears.
-  function heard(v) {
-    const C = communities(), N = C.list.length, D = C.D;
-    const dAvg = new Float64Array(D), dW = new Float64Array(D), kAvg = new Float64Array(NI), kW = new Float64Array(NI);
-    for (const c of C.list) { dAvg[c.d] += v[c.i] * c.size; dW[c.d] += c.size; kAvg[c.k] += v[c.i] * c.size; kW[c.k] += c.size; }
-    for (let d = 0; d < D; d++) dAvg[d] = dW[d] ? dAvg[d] / dW[d] : 0;
-    for (let k = 0; k < NI; k++) kAvg[k] = kW[k] ? kAvg[k] / kW[k] : 0;
-    const out = new Float64Array(N);
+  const DISTRICT_TALK = 0.1; // how much of what a community hears is its district's general talk
+  // What each community hears about the parties: its ties' leanings, each weighted by how much it trusts them. Ties
+  // whose views are close are listened to; the further apart, the less, and past LISTEN not at all. Communities that
+  // have fallen out aren't listening to each other. Plus a little of the district's own talk. lean is 4 per community.
+  const LISTEN = 0.1;
+  function heardLeans(lean, rival) {
+    const C = communities(), T = network(), N = C.list.length, D = C.D, out = new Float64Array(N * 4);
+    const dAvg = new Float64Array(D * 4), dW = new Float64Array(D);
+    for (const c of C.list) { for (let j = 0; j < 4; j++) dAvg[c.d * 4 + j] += lean[c.i * 4 + j] * c.size; dW[c.d] += c.size; }
+    for (let d = 0; d < D; d++) for (let j = 0; j < 4; j++) dAvg[d * 4 + j] /= dW[d];
     for (const c of C.list) {
-      let nb = 0; const ns = C.near[c.d]; for (const b of ns) nb += dAvg[b]; nb = ns.length ? nb / ns.length : dAvg[c.d];
-      out[c.i] = 0.5 * dAvg[c.d] + 0.3 * kAvg[c.k] + 0.2 * nb;
+      const i = c.i, s = [0, 0, 0, 0]; let wt = 0;
+      for (let e = T.off[i]; e < T.off[i + 1]; e++) {
+        const o = T.to[e]; if (rival[(i < o ? i : o) + ':' + (i < o ? o : i)] !== undefined) continue;
+        let dist = 0; for (let j = 0; j < 4; j++) dist += Math.abs(lean[i * 4 + j] - lean[o * 4 + j]);
+        const trust = T.w[e] * clamp(1 - dist / LISTEN, 0, 1); if (trust <= 0) continue;
+        for (let j = 0; j < 4; j++) s[j] += trust * lean[o * 4 + j]; wt += trust;
+      }
+      for (let j = 0; j < 4; j++) out[i * 4 + j] = (1 - DISTRICT_TALK) * (wt ? s[j] / wt : lean[i * 4 + j]) + DISTRICT_TALK * dAvg[c.d * 4 + j];
     }
     return out;
+  }
+  // how readily a community is talked round by the communities it knows: 0.4 (stubborn) to 1.6 (easily swayed)
+  let SWAY = null;
+  function sway() {
+    if (SWAY) return SWAY;
+    const C = communities(); SWAY = new Float64Array(C.list.length);
+    for (const c of C.list) SWAY[c.i] = 0.4 + 1.2 * seeded('sway:' + c.i)();
+    return SWAY;
   }
 
   // ---------------------------------------------------------------- the social network (tastes)
@@ -393,7 +409,7 @@
       hardship[d] = clamp(smog * 0.4 + dark * 0.5 + lost * 0.8 + shelf * 0.4 + prices * 0.3 + w.glitch[d] * 0.6, 0, 1);
     }
     // friends pull each other's views together, and the day's events push them
-    const heardLean = []; for (let j = 0; j < 4; j++) { const v = new Float64Array(N); for (let i = 0; i < N; i++) v[i] = OP.lean[i * 4 + j]; heardLean.push(heard(v)); }
+    const heardL = heardLeans(OP.lean, OP.rival), SW = sway();
     const joy = new Float64Array(N); if (tr) for (const f of tr.fads) for (let i = 0; i < N; i++) joy[i] += f.a[i];
     const lean2 = OP.lean.slice(), mood2 = OP.mood.slice();
     for (const c of C.list) {
@@ -401,7 +417,7 @@
       for (let j = 0; j < 4; j++) {
         const p = PIDS[j];
         let x = OP.lean[base + j];
-        x += 0.03 * (heardLean[j][c.i] - x);                       // friends
+        x += 0.03 * SW[c.i] * (heardL[base + j] - x);             // the communities it knows, some more swayable than others
         x += 0.006 * P[p] * (1 + 12 * (p === 'I' ? 0 : INTERESTS[c.k].tilt[p])); // what happened, felt more by those who care
         x += 0.01 * (OP.base[base + j] - x);                        // old loyalties
         x += (r() - 0.5) * 0.002;
@@ -426,6 +442,20 @@
       emit('society.turns', 2, 'turn:' + c.i + ':' + ymd(dayStart(k)), { community: c.name, from: PIDS[was], to: PIDS[top], rival: foe ? foe.name : null, cause, causes: [{ cause: cause === 'their friends' ? 'friends' : cause.replace(/^the /, ''), label: cause === 'their friends' ? 'their friends talked them round' : cause, share: 100 }] },
         'The ' + c.name + ' have turned to ' + PNAME[PIDS[top]] + (foe ? ', and the ' + foe.name + ' are no longer speaking to them' : ''), 3);
       if (foe) OP.rival[Math.min(c.i, foe.i) + ':' + Math.max(c.i, foe.i)] = k;
+    }
+    // the last of their kind: when a party is down to one community in a district that once had several
+    if (!OP.held) { OP.held = new Int32Array(C.D * 4); OP.most = new Int32Array(C.D * 4); }
+    for (let d = 0; d < C.D; d++) {
+      const n = [0, 0, 0, 0]; let last = [null, null, null, null];
+      for (const c of C.byDistrict[d]) { const j = OP.top[c.i]; if (j !== undefined) { n[j]++; last[j] = c; } }
+      for (let j = 0; j < 4; j++) {
+        const x = d * 4 + j, was = OP.held[x];
+        if (n[j] > OP.most[x]) OP.most[x] = n[j];
+        if (n[j] === 1 && was > 1 && OP.most[x] >= 3 && j < 3)
+          emit('society.laststand', 2, 'last:' + d + ':' + PIDS[j] + ':' + ymd(dayStart(k)), { district: C.districts[d].name, party: PIDS[j], community: last[j].name, once: OP.most[x] },
+            'The ' + last[j].interest + ' are now the only community in ' + C.districts[d].name + ' still for ' + PNAME[PIDS[j]] + ', where ' + OP.most[x] + ' once were', 5);
+        OP.held[x] = n[j];
+      }
     }
     for (const key of Object.keys(OP.rival)) {
       const [a1, b1] = key.split(':').map(Number);
