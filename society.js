@@ -33,7 +33,7 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '1.5.0';
+  const VERSION = '1.5.1';
   const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const START = Date.UTC(2026, 11, 1); // the December Grand Prix: Society begins with freight
   const VOTES_FROM = Date.UTC(2027, 4, 1); // elections read Society from the May 2027 general election
@@ -530,7 +530,9 @@
     const C = communities(), d = C.districts.findIndex((x) => x.name === districtName); if (d < 0) return 1;
     const rec = opinionRecord(daysTo(day - POLL_LAG)); if (!rec || !OP.basePoll) return 1;
     const j = PIDS.indexOf(party); if (j < 0) return 1;
-    const ratio = rec.poll[d * 4 + j] / OP.basePoll[d * 4 + j];
+    // the change in points, against the party's starting share but never less than a fifth: a point of support is worth
+    // about the same to every party, so a small party's gains don't count several times over
+    const b0 = OP.basePoll[d * 4 + j], ratio = 1 + (rec.poll[d * 4 + j] - b0) / (b0 > 0.2 ? b0 : 0.2);
     return clamp(1 + 1.6 * (ratio - 1), 0.45, 2);
   }
 
