@@ -33,7 +33,7 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '1.4.0';
+  const VERSION = '1.5.0';
   const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const START = Date.UTC(2026, 11, 1); // the December Grand Prix: Society begins with freight
   const VOTES_FROM = Date.UTC(2027, 4, 1); // elections read Society from the May 2027 general election
@@ -598,6 +598,13 @@
     if (opinionsReady()) { const op = opinionRecord(k); out.lean = {}; PIDS.forEach((p, j) => (out.lean[p] = rd(op.lean[c.i * 4 + j] * 100, 1))); out.mood = rd(op.cmood[c.i] * 100, 1); }
     return out;
   }
+  /** The social network itself, which depends only on the map: each community's district and size, and who it knows. */
+  function networkOf() {
+    if (!ready()) return null;
+    const C = communities(), T = network();
+    return { communities: C.list.map((c) => ({ id: c.i, name: c.name, district: c.d, districtName: c.district, members: c.size, novelty: c.novelty })),
+      ties: C.list.map((c) => { const o = []; for (let e = T.off[c.i]; e < T.off[c.i + 1]; e++) o.push({ id: T.to[e], weight: T.w[e], kind: T.kind[e] }); return o; }) };
+  }
   function communitiesAt(t) { if (!ready()) return []; return communities().list.map((c) => ({ id: c.i, name: c.name, district: c.district, interest: c.interest, members: c.size })); }
 
   // ---------------------------------------------------------------- one pixel's social life
@@ -675,7 +682,7 @@
   root.PixelUniverse = root.PixelUniverse || {};
   root.PixelUniverse.society = {
     version: VERSION, source: 'society', startDate: ymd(START), start: START, votesFrom: ymd(VOTES_FROM), ready, opinionsReady,
-    stateAt, community, communitiesAt, pixelAt, eventsBetween, historyBetween,
+    stateAt, community, communitiesAt, networkOf, pixelAt, eventsBetween, historyBetween,
     productBoost, songFad, colourFad, voteSwing, populationAt, needsAt, NEEDS, wellbeingStart: ymd(WELL_START), incumbentFactor, migrationStart: ymd(MIG_START), INTERESTS: INTERESTS.map((x) => x.name), COLOURS: COLOURS.map((c) => ({ name: c[0], hex: c[1] }))
   };
 })(typeof window !== 'undefined' ? window : globalThis);
