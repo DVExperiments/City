@@ -19,7 +19,7 @@
 (function (root) {
   'use strict';
 
-  const VERSION = '0.3.1';
+  const VERSION = '0.4.0';
   const MIN = 60000, H = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   const YEAR = 31557600000; // 365.25 days
   const EPOCH = Date.UTC(2025, 11, 3);
@@ -230,9 +230,10 @@
   /** The start of month n of the Life Cycle on the life clock: a pixel month (about two and a half days) under the Pixel Calendar. */
   const lifeMonth = (n) => fromL(LIFE_START + Math.floor(n * MONTH));
   const GESTATION = 280 * DAY;
-  // the chance of going dark within a year, by age
+  // the chance of going dark within a year, by age: about half of pixels are still lit at 79, and the average pixel goes
+  // dark at 77 (Pixel Years, on the life clock)
   const Q = [];
-  for (let a = 0; a <= 115; a++) Q.push(a < 1 ? 0.004 : a < 15 ? 0.0002 : a < 25 ? 0.0005 : a < 35 ? 0.0008 : a < 45 ? 0.0015 : a < 55 ? 0.003 : a < 65 ? 0.007 : a < 75 ? 0.018 : a < 85 ? 0.05 : a < 95 ? 0.14 : a < 105 ? 0.32 : 0.6);
+  for (let a = 0; a <= 115; a++) Q.push(a < 1 ? 0.004 : a < 15 ? 0.0002 : a < 25 ? 0.0005 : a < 35 ? 0.0008 : a < 45 ? 0.0015 : a < 55 ? 0.003 : a < 65 ? 0.007 : a < 75 ? 0.025 : a < 85 ? 0.07 : a < 95 ? 0.17 : a < 105 ? 0.32 : 0.6);
   const darkCache = new Map();
   /** When a pixel goes dark: a moment after the Life Cycle begins, drawn from their age then. */
   function darkAt(id, birth) {

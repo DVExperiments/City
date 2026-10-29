@@ -5,7 +5,7 @@
   const DAY = 86400000;
   const main = document.getElementById('main');
   const q = new URLSearchParams(location.search);
-  const at = q.get('at'), parsed = at ? Date.parse(at.length <= 16 ? at + ':00Z' : at) : NaN;
+  const at = q.get('at'), parsed = at ? Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(at) ? at + 'T00:00:00Z' : at.length <= 16 ? at + ':00Z' : at) : NaN;
   const offset = isNaN(parsed) ? 0 : parsed - Date.now();
   const now = () => Date.now() + offset;
   const AT = isNaN(parsed) ? '' : '?at=' + encodeURIComponent(at);
