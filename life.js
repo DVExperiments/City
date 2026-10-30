@@ -63,15 +63,115 @@
     P.streets = {};
     for (const h of homes) if (!P.streets[h.y]) P.streets[h.y] = h.address.replace(/^(Flat \d+, |Flat \d+ above |Above )?\d+[A-F]? /, '');
     for (let y = 0; y < m.H; y += 3) for (let x = m.W - 1; x > 0; x--) if (m.tiles[at(x, y)] === T.BEACH && !(x >= 108 && y >= 50 && y <= 66)) { P.beach.push({ x, y }); break; }
+    P.dry = dryGrid(m, T);
+    P.net = streetNetwork();
     return P;
+  }
+
+  // ---------------------------------------------------------------- dry land
+  // Pixels walk; they do not swim. The blank margin (the sea) is never walked on, and the data stream (the river)
+  // only by its bridges. dry[i] is 1 where a pixel may set foot.
+  function dryGrid(m, T) {
+    const dry = new Uint8Array(m.W * m.H);
+    for (let i = 0; i < dry.length; i++) dry[i] = m.tiles[i] === T.SEA || m.tiles[i] === T.RIVER ? 0 : 1;
+    return dry;
+  }
+  const dryAt = (x, y) => { x = Math.floor(x); y = Math.floor(y); return x >= 0 && y >= 0 && x < P.m.W && y < P.m.H && P.dry[y * P.m.W + x] === 1; };
+  // a straight, level or upright stretch of path stays on dry land the whole way
+  function drySeg(a, b) {
+    if (a.y === b.y) { const y = a.y, x0 = Math.floor(a.x < b.x ? a.x : b.x), x1 = Math.floor(a.x < b.x ? b.x : a.x); for (let x = x0; x <= x1; x++) if (!dryAt(x, y)) return false; return true; }
+    const x = a.x, y0 = Math.floor(a.y < b.y ? a.y : b.y), y1 = Math.floor(a.y < b.y ? b.y : a.y);
+    for (let y = y0; y <= y1; y++) if (!dryAt(x, y)) return false;
+    return true;
+  }
+  // a spot on dry land: the spot itself, or the nearest dry spot to it (searched ring by ring, in a fixed order)
+  function ashore(p) {
+    if (dryAt(p.x, p.y)) return p;
+    const fx = Math.floor(p.x), fy = Math.floor(p.y), ox = p.x - fx, oy = p.y - fy;
+    for (let d = 1; d <= 6; d++) for (let dy = -d; dy <= d; dy++) for (let dx = -d; dx <= d; dx++) {
+      if ((dx < 0 ? -dx : dx) !== d && (dy < 0 ? -dy : dy) !== d) continue;
+      if (dryAt(fx + dx, fy + dy)) return { x: fx + dx + ox, y: fy + dy + oy };
+    }
+    return p;
+  }
+  function dryPath(pts) { for (let i = 1; i < pts.length; i++) if (!drySeg(pts[i - 1], pts[i])) return false; return true; }
+
+  // ---------------------------------------------------------------- the street network
+  // Junctions are where a walkway row meets a walkway column on dry land; neighbouring junctions are linked when the
+  // walkway between them is dry all the way. Shortest walks between every pair of junctions are worked out once.
+  function streetNetwork() {
+    const R = P.rows, Cc = P.cols, nodes = [], id = {};
+    for (const y of R) for (const x of Cc) if (dryAt(x, y)) { id[y * 1000 + x] = nodes.length; nodes.push({ x, y }); }
+    const n = nodes.length, INF = 1e9;
+    const dist = new Float64Array(n * n).fill(INF), next = new Int32Array(n * n).fill(-1);
+    for (let i = 0; i < n; i++) { dist[i * n + i] = 0; next[i * n + i] = i; }
+    const link = (i, j) => {
+      const a = nodes[i], b = nodes[j];
+      if (!drySeg(a, b)) return;
+      const d = (a.x > b.x ? a.x - b.x : b.x - a.x) + (a.y > b.y ? a.y - b.y : b.y - a.y);
+      dist[i * n + j] = dist[j * n + i] = d; next[i * n + j] = j; next[j * n + i] = i;
+    };
+    for (const y of R) { let prev = -1; for (const x of Cc) { const k = id[y * 1000 + x]; if (k === undefined) continue; if (prev >= 0) link(prev, k); prev = k; } }
+    for (const x of Cc) { let prev = -1; for (const y of R) { const k = id[y * 1000 + x]; if (k === undefined) continue; if (prev >= 0) link(prev, k); prev = k; } }
+    for (let k = 0; k < n; k++) for (let i = 0; i < n; i++) { const ik = dist[i * n + k]; if (ik >= INF) continue; for (let j = 0; j < n; j++) { const d = ik + dist[k * n + j]; if (d < dist[i * n + j]) { dist[i * n + j] = d; next[i * n + j] = next[i * n + k]; } } }
+    return { nodes, id, n, dist, next, INF };
+  }
+  // ways from a point onto the network: straight up or down to a walkway row, or across to a walkway column, then
+  // along it to the nearest junction either way. Each is [junction, the points from p to it, its length].
+  function accesses(p, lane) {
+    const N = P.net, out = [];
+    const by = (list, v) => list.slice().sort((a, b) => ((a > v ? a - v : v - a) - (b > v ? b - v : v - b)) || a - b).slice(0, 4);
+    for (const y of by(P.rows, p.y)) {
+      const ry = y + 0.5 + lane, foot = { x: p.x, y: ry };
+      if (!drySeg(p, foot)) continue;
+      for (const dir of [-1, 1]) {
+        let best = -1;
+        for (const x of P.cols) { if ((x - p.x) * dir < 0) continue; const k = N.id[y * 1000 + x]; if (k === undefined) continue; if (best < 0 || (x - p.x) * dir < (P.net.nodes[best].x - p.x) * dir) best = k; }
+        if (best < 0) continue;
+        const j = { x: N.nodes[best].x + 0.5 + lane, y: ry };
+        if (!drySeg(foot, j)) continue;
+        out.push([best, [p, foot, j], (p.y > ry ? p.y - ry : ry - p.y) + (p.x > j.x ? p.x - j.x : j.x - p.x)]);
+      }
+    }
+    for (const x of by(P.cols, p.x)) {
+      const cx = x + 0.5 + lane, foot = { x: cx, y: p.y };
+      if (!drySeg(p, foot)) continue;
+      for (const dir of [-1, 1]) {
+        let best = -1;
+        for (const y of P.rows) { if ((y - p.y) * dir < 0) continue; const k = N.id[y * 1000 + x]; if (k === undefined) continue; if (best < 0 || (y - p.y) * dir < (P.net.nodes[best].y - p.y) * dir) best = k; }
+        if (best < 0) continue;
+        const j = { x: cx, y: N.nodes[best].y + 0.5 + lane };
+        if (!drySeg(foot, j)) continue;
+        out.push([best, [p, foot, j], (p.x > cx ? p.x - cx : cx - p.x) + (p.y > j.y ? p.y - j.y : j.y - p.y)]);
+      }
+    }
+    return out;
+  }
+  function networkRoute(a, b, lane) {
+    const N = P.net, from = accesses(a, lane), to = accesses(b, lane);
+    let best = null, bd = N.INF;
+    for (const f of from) for (const g of to) { const d = f[2] + N.dist[f[0] * N.n + g[0]] + g[2]; if (d < bd) { bd = d; best = [f, g]; } }
+    if (!best) return null;
+    const pts = best[0][1].slice();
+    for (let k = best[0][0]; k !== best[1][0];) { k = N.next[k * N.n + best[1][0]]; const q = N.nodes[k]; pts.push({ x: q.x + 0.5 + lane, y: q.y + 0.5 + lane }); }
+    pts.pop(); // the last junction, which the way off the network starts from
+    for (let i = best[1][1].length - 1; i >= 0; i--) pts.push(best[1][1][i]);
+    return pts;
   }
   const nearest = (list, v) => { let b = list[0], bd = 1e9; for (const q of list) { const d = q > v ? q - v : v - q; if (d < bd) { bd = d; b = q; } } return b; };
   const streetName = (p) => P.streets[p.y] || 'the high street';
 
   // ---------------------------------------------------------------- a route through the streets
+  // The usual way: along the nearest walkway row, then down the walkway column nearest the destination. If that would
+  // put feet in the sea or the stream, try it the other way round, then go by the street network, over the bridges.
   function route(a, b, lane) {
     const ra = nearest(P.rows, a.y) + 0.5 + lane, cb = nearest(P.cols, b.x) + 0.5 + lane;
-    const pts = [a, { x: a.x, y: ra }, { x: cb, y: ra }, { x: cb, y: b.y }, b];
+    let pts = [a, { x: a.x, y: ra }, { x: cb, y: ra }, { x: cb, y: b.y }, b];
+    if (!dryPath(pts)) {
+      const ca = nearest(P.cols, a.x) + 0.5 + lane, rb = nearest(P.rows, b.y) + 0.5 + lane;
+      const alt = [a, { x: ca, y: a.y }, { x: ca, y: rb }, { x: b.x, y: rb }, b];
+      pts = dryPath(alt) ? alt : networkRoute(a, b, lane) || pts;
+    }
     let len = 0;
     const seg = [];
     for (let i = 1; i < pts.length; i++) { const d = Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y); seg.push(d); len += d; }
@@ -131,7 +231,7 @@
         const door = { x: home.x + 0.3 + (mi % 3) * 0.2, y: home.y + 0.85 };
         const lane = (seeded('lane:' + mem.id)() - 0.5) * 0.5;
         const visits = []; // { leave, place: {x,y}, stay, label, outside, travel }
-        const add = (leave, place, stay, label, outside, travel) => visits.push({ leave, place, stay, label, outside, travel });
+        const add = (leave, place, stay, label, outside, travel) => visits.push({ leave, place: ashore(place), stay, label, outside, travel });
         const pr = seeded('person:' + mem.id); // fixed for life: workplace, habits
         const homeD = home.district;
         const job = (() => { const local = P.jobs[homeD]; const list = local.length && pr() < 0.55 ? local : P.allJobs; return list[Math.floor(pr() * list.length)]; })();
@@ -144,7 +244,7 @@
           if (square) opts.push([square, 'Meeting friends in ' + square.name, 3]);
           const park = parks.filter((p) => p.district === homeD)[0] || parks[Math.floor(r() * (parks.length || 1))];
           if (park) opts.push([park, 'Walking in ' + park.name, 3]);
-          if (P.beach.length) { const b = P.beach[Math.floor(r() * P.beach.length)]; opts.push([{ x: b.x - 1, y: b.y, w: 2, h: 2 }, 'At the beach', weekend ? 2 : 0.5]); }
+          if (P.beach.length) { const b = P.beach[Math.floor(r() * P.beach.length)]; opts.push([{ x: b.x - 1, y: b.y - 0.4, w: 2.4, h: 1.8 }, 'At the beach', weekend ? 2 : 0.5]); }
           if (museum) opts.push([{ x: museum.x - 1, y: museum.y + museum.h, w: museum.w + 2, h: 2.2 }, 'Visiting the Museum', 0.35]);
           if (bookmaker) opts.push([{ x: bookmaker.x - 1, y: bookmaker.y + bookmaker.h, w: bookmaker.w + 2, h: 2.2 }, 'Studying the odds outside the Bookmaker', age >= 18 ? 0.3 : 0]);
           let tot = 0; for (const o of opts) tot += o[2];
@@ -269,5 +369,5 @@
   }
 
   root.PixelUniverse = root.PixelUniverse || {};
-  root.PixelUniverse.life = { version: '0.1.0', source: 'life', ready, peopleAt, planFor, shownShare: SHOWN };
+  root.PixelUniverse.life = { version: '0.2.0', source: 'life', ready, peopleAt, planFor, shownShare: SHOWN };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -820,7 +820,8 @@
       for (const p of people) {
         const jitter = ((p.id.charCodeAt(p.id.length - 1) * 7 + p.id.length * 3) % 10) / 10;
         // standing still, people shift their weight; walking, they bob
-        const dx = p.moving ? 0 : (reduce ? 0 : Math.sin(step / 3 + jitter * 6) * 0.04) + (jitter - 0.5) * 0.35, dy = p.moving && !reduce ? Math.sin(step + jitter * 6) * 0.03 : (((jitter * 13) % 1) - 0.5) * 0.35;
+        let dx = p.moving ? 0 : (reduce ? 0 : Math.sin(step / 3 + jitter * 6) * 0.04) + (jitter - 0.5) * 0.35, dy = p.moving && !reduce ? Math.sin(step + jitter * 6) * 0.03 : (((jitter * 13) % 1) - 0.5) * 0.35;
+        if (isWater(tile(Math.floor(p.x + dx), Math.floor(p.y + dy)))) { dx = 0; dy = 0; } // fidgeting never takes anyone into the water
         const X = sx(p.x + dx) - size / 2, Y = sy(p.y + dy) - size / 2;
         if (z >= 6) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(X + size * 0.25, Y + size * 0.3, size, size); }
         ctx.fillStyle = colourOf(p.id);
@@ -1050,6 +1051,7 @@
             const out = ph < 0.5 ? ph * 2 : (1 - ph) * 2; // out of the door and back again
             const side = (n + j) % 3, door = pl.x + pl.w * (0.3 + 0.4 * ((j * 0.618) % 1));
             const wx = side === 0 ? door : side === 1 ? pl.x - out * 1.6 : pl.x + pl.w + out * 1.6, wy = side === 0 ? pl.y + pl.h + out * 1.6 : pl.y + pl.h * (0.3 + 0.4 * ((j * 0.37) % 1));
+            if (isWater(tile(Math.floor(wx), Math.floor(wy)))) continue; // visitors stay on dry land
             ctx.globalAlpha = 0.35 + 0.65 * Math.min(1, out * 3);
             ctx.fillStyle = PAL.neon[(n * 3 + j) % PAL.neon.length];
             ctx.fillRect(sx(wx) - z * 0.11, sy(wy) - z * 0.11, Math.max(2, z * 0.22), Math.max(2, z * 0.22));
